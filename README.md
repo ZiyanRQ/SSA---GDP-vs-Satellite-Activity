@@ -251,25 +251,90 @@ touched.
 The series is in `data/interim/lights_country_year.csv`; see
 `outputs/figures/lights_series.png`.
 
-1. **2017 moves the whole panel at once.** Median growth across the 38 is
-   +17.8% in 2017, against +1.0%, +7.2%, +2.4%, +5.2% and +10.4% in the other
-   years. Thirty-eight separate economies do not accelerate together like
-   that, so this looks like a change in the annual compositing rather than
-   economic growth. Year fixed effects absorb a shift common to all countries,
-   which is a point in favour of the specification — but it should be stated,
-   not left for a reader to find.
-2. **Ghana's lights more than tripled, 3.21× over 2015–2021** (Δln = 1.17),
-   while real GDP grew about 1.3×. The rise is steady rather than a jump, and
-   the brightest cell inside the border stays modest (138 → 248), so it is
-   *not* a gas flare: the brightening is spread across the country. It is
-   still very large, and since Ghana is a case study the cause needs
-   establishing before the gap is interpreted.
-3. **Nigeria's series is flare-driven.** Lights fell 0.90× over the period,
-   and the brightest cell inside the border dropped from 9,961 (2015) to 3,606
-   (2016) — the signature of Niger Delta flaring, which coincides with the
-   2016 oil-price collapse and attacks on oil infrastructure. Unlike Ghana's
-   offshore fields, this flaring is *inside* the land border and cannot be
-   excluded by the boundary.
+#### 1. The 2017 jump is a detection change, confirmed
+
+Median growth across the 38 is **+17.8% in 2017**, against +1.0%, +7.2%,
++2.4%, +5.2% and +10.4% in the other years. Thirty-eight separate economies do
+not accelerate together like that.
+
+`python -m src.process_lights --stage diagnose` tests it directly, by building
+a **stable mask** of cells at or above 5 nW/cm²/sr in *every* year and
+comparing the total over that fixed set of cells with the total over
+everything. Holding the cells fixed removes any change in *which* cells are
+counted, leaving only changes in how bright the same cells are.
+
+| 2016→2017 | Δln |
+| --- | --- |
+| All cells | **+0.060** |
+| Fixed set of reliably-lit cells | **+0.005** |
+| Number of lit cells | +0.050 |
+
+The same physically bright cells did **not** brighten in 2017. The extra light
+arrives in cells that previously read zero. The brightness bands confirm it,
+with a clean monotonic gradient — cell counts, 2017 ÷ 2016:
+
+| 0.25–0.5 | 0.5–1 | 1–2 | 2–5 | 5–10 | 10–50 | >50 |
+| --- | --- | --- | --- | --- | --- | --- |
+| ×1.31 | ×1.47 | ×1.32 | ×1.20 | ×1.11 | ×1.06 | ×1.04 |
+
+The dimmer the band, the larger the jump. That is the signature of a detection
+threshold moving, not of economic growth.
+
+**Why this is worse than it first looks.** Year fixed effects absorb a shift
+that is *common to all countries*, but this one is not: it lands on marginal,
+near-threshold cells, so countries with proportionally more of them gain most.
+That is why the median country sees +17.8% while the SSA aggregate sees only
++6.0% — the aggregate is dominated by bright cells that barely moved. The
+artefact is therefore **correlated with how dim a country is**, which year
+effects cannot remove.
+
+**Recommended robustness check:** re-run the main models on a lights measure
+restricted to cells above a brightness floor (the stable-mask logic). It is
+immune to the detection change by construction. Supporting evidence that it is
+also the more economically meaningful series: the stable-mask total **falls
+4.3% in 2020**, picking up COVID, while the all-cells total falls only 1.6%.
+
+#### 2. Ghana's tripling is mostly real, and not what Kenya's is
+
+Ghana rose **3.21×** over 2015–2021 (Δln = 1.17) while real GDP grew about
+1.3×. Three checks:
+
+- **Not a flare.** The brightest cell inside the border stays modest
+  (138 → 248). A flare would read in the thousands, as Nigeria's does.
+- **Not a dim-baseline artefact.** Growth across the 38 is essentially
+  unrelated to starting brightness (r = −0.165, r² = 0.027, and the brightest
+  quartile grew as fast as the dimmest). Ghana is in the **brightest**
+  quartile and still tripled.
+- **Mostly existing areas getting brighter**, which is what separates it from
+  its neighbours. Decomposing the rise by comparing the same cells in both
+  years:
+
+| Source of the rise | Ghana | Kenya | Côte d'Ivoire |
+| --- | --- | --- | --- |
+| Cells lit in **both** years, brighter | **66.3%** | 37.8% | 41.6% |
+| **Newly lit** cells | 29.5% | 57.8% | 48.3% |
+
+Kenya's rise is grid expansion, as its +23pp of electricity access implies.
+Ghana's is predominantly **intensification of places that were already lit**.
+
+**Leading hypothesis, still to verify:** Ghana's *dumsor* power crisis, with
+years of load shedding, ran to around 2016. That would make 2015 an
+artificially dark baseline, and much of the subsequent rise a recovery rather
+than growth. Since 2015 is the base year for the 2016 growth rate, this
+matters directly. Check against Ghana Grid Company / Energy Commission load
+shedding records before interpreting Ghana's gap.
+
+Note also that the lit-cell count roughly tripled in all three countries
+(3.27, 3.26, 3.21) — that part is the detection artefact from finding 1, not
+three identical electrification programmes.
+
+#### 3. Nigeria's series is flare-driven
+
+Lights fell 0.90× over the period, and the brightest cell inside the border
+dropped from 9,961 (2015) to 3,606 (2016) — the signature of Niger Delta
+flaring, coinciding with the 2016 oil-price collapse and attacks on oil
+infrastructure. Unlike Ghana's offshore fields, this flaring is *inside* the
+land border and cannot be excluded by the boundary.
 
 Two more things are deliberately left unset so that a decision has to be made
 rather than defaulted:

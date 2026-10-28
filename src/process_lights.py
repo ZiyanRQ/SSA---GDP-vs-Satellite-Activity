@@ -1061,12 +1061,199 @@ def write_series_figure(growth: pd.DataFrame, raw: pd.DataFrame) -> Path:
     return out_path
 
 
+# ===========================================================================
+# STAGE 4: diagnostics - is a change real brightening, or more cells detected?
+# ===========================================================================
+
+# A cell counts as "reliably lit" at or above this radiance: well clear of the
+# detection limit, so whether it belongs in the stable mask is not itself in
+# question.
+STABLE_THRESHOLD = 5.0
+
+# Brightness bands used to locate where a change sits. A change concentrated
+# in the dim bands is a detection effect; one spread evenly, or concentrated
+# in the bright bands, is real.
+BRIGHTNESS_BINS = [0.0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 50.0, np.inf]
+
+
+def run_diagnostics_stage(years: list[int] | None = None) -> pd.DataFrame:
+    """Separate real brightening from cells crossing the detection limit.
+
+    THE TEST
+        If radiance genuinely rose, cells that were already clearly lit in
+        every year should have brightened along with everything else. If
+        instead the compositing began detecting dimmer cells, a FIXED set of
+        reliably-bright cells would show no jump while the total did, because
+        the extra light is arriving in cells that previously read zero.
+
+        So this builds a "stable mask" of cells at or above STABLE_THRESHOLD
+        in EVERY year, and compares the total over that fixed set with the
+        total over everything. Holding the set of cells fixed is the whole
+        point: it removes any change in WHICH cells are counted, leaving only
+        changes in how bright those same cells are.
+
+    All the rasters are opened at once and read in step, block by block, so
+    every cell is compared across years without holding a whole image.
+    """
+    target_years = years if years is not None else config.YEARS_LEVELS
+    config.check_years(target_years)
+
+    paths = {year: clamped_path(year) for year in target_years}
+    for year, path in paths.items():
+        if not path.exists():
+            raise FileNotFoundError(
+                f"missing clamped raster for {year}: {path}. "
+                "Run --stage extract first."
+            )
+
+    readers = {year: rasterio.open(path) for year, path in paths.items()}
+    try:
+        first = readers[target_years[0]]
+        height, width = first.height, first.width
+
+        n_bins = len(BRIGHTNESS_BINS) - 1
+        bin_counts = {y: np.zeros(n_bins, dtype=np.int64) for y in target_years}
+        total_sum = {y: 0.0 for y in target_years}
+        total_lit = {y: 0 for y in target_years}
+        stable_sum = {y: 0.0 for y in target_years}
+        stable_cells = 0
+
+        n_blocks = int(np.ceil(height / BLOCK_ROWS))
+        for i in range(n_blocks):
+            row_off = i * BLOCK_ROWS
+            rows = min(BLOCK_ROWS, height - row_off)
+            window = rasterio.windows.Window(0, row_off, width, rows)
+
+            blocks = {y: readers[y].read(1, window=window) for y in target_years}
+
+            stable = np.ones((rows, width), dtype=bool)
+            for year in target_years:
+                stable &= blocks[year] >= STABLE_THRESHOLD
+            stable_cells += int(stable.sum())
+
+            for year in target_years:
+                block = blocks[year]
+                total_sum[year] += float(block.sum(dtype=np.float64))
+                total_lit[year] += int(np.count_nonzero(block > 0))
+                stable_sum[year] += float(block[stable].sum(dtype=np.float64))
+
+                which = np.digitize(block, BRIGHTNESS_BINS) - 1
+                for b in range(n_bins):
+                    bin_counts[year][b] += int(np.count_nonzero(which == b))
+
+            print(f"  block {i + 1}/{n_blocks}", flush=True)
+    finally:
+        for reader in readers.values():
+            reader.close()
+
+    report = pd.DataFrame({
+        "year": target_years,
+        "total_sum": [total_sum[y] for y in target_years],
+        "stable_sum": [stable_sum[y] for y in target_years],
+        "lit_cells": [total_lit[y] for y in target_years],
+    })
+    report["stable_cells"] = stable_cells
+    report["d_ln_total"] = np.log(report["total_sum"]).diff()
+    report["d_ln_stable"] = np.log(report["stable_sum"]).diff()
+    report["d_ln_lit_cells"] = np.log(report["lit_cells"]).diff()
+
+    out_path = config.DATA_INTERIM / "lights_detection_diagnostics.csv"
+    report.to_csv(out_path, index=False)
+
+    bands = pd.DataFrame(
+        {y: bin_counts[y] for y in target_years},
+        index=[f"{BRIGHTNESS_BINS[b]:g}-{BRIGHTNESS_BINS[b + 1]:g}"
+               for b in range(n_bins)],
+    )
+    bands.index.name = "radiance_band"
+    bands_path = config.DATA_INTERIM / "lights_brightness_bands.csv"
+    bands.to_csv(bands_path)
+
+    print(f"\nstable mask: {stable_cells:,} cells at or above "
+          f"{STABLE_THRESHOLD} nW/cm2/sr in all {len(target_years)} years")
+    print(report.round(4).to_string(index=False))
+    print(f"\nwritten to {out_path} and {bands_path}")
+
+    write_detection_figure(report, bands)
+    return report
+
+
+def write_detection_figure(report: pd.DataFrame, bands: pd.DataFrame) -> Path:
+    """Chart the total against the fixed set of reliably-lit cells."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.5, 6.4), dpi=130)
+
+    base = report.iloc[0]
+    years = report["year"]
+
+    ax1.plot(years, 100 * report["total_sum"] / base["total_sum"],
+             marker="o", linewidth=2.2, color="#c0392b",
+             label="all cells (the measure in use)")
+    ax1.plot(years, 100 * report["stable_sum"] / base["stable_sum"],
+             marker="s", linewidth=2.2, color="#2c6fbb",
+             label=f"fixed set of cells >= {STABLE_THRESHOLD:g} in every year")
+    ax1.plot(years, 100 * report["lit_cells"] / base["lit_cells"],
+             marker="^", linewidth=1.6, color="#777777", linestyle="--",
+             label="number of lit cells")
+    ax1.axhline(100, color="#999999", linewidth=0.8, linestyle=":")
+    ax1.set_ylabel("index, 2015 = 100")
+    ax1.set_xlabel("year")
+    ax1.set_title("Totals vs a fixed set of reliably-lit cells", fontsize=11)
+    ax1.legend(frameon=False, fontsize=8.5, loc="upper left")
+    ax1.grid(axis="y", color="#e8e8ec", linewidth=0.7)
+    ax1.set_axisbelow(True)
+
+    # 2016 -> 2017 change by brightness band.
+    if 2016 in bands.columns and 2017 in bands.columns:
+        ratio = (bands[2017] / bands[2016]).sort_index()
+        order = sorted(ratio.index, key=lambda s: float(s.split("-")[0]))
+        ratio = ratio.loc[order]
+        colours = ["#c0392b" if v > 1.15 else "#2c6fbb" for v in ratio.values]
+        ax2.barh(range(len(ratio)), ratio.values, color=colours)
+        ax2.set_yticks(range(len(ratio)))
+        ax2.set_yticklabels(ratio.index, fontsize=8.5)
+        ax2.axvline(1.0, color="#333333", linewidth=1.0)
+        ax2.set_xlabel("cell count, 2017 / 2016")
+        ax2.set_ylabel("radiance band (nW/cm2/sr)")
+        ax2.set_title("Which cells appeared in 2017?", fontsize=11)
+        ax2.grid(axis="x", color="#e8e8ec", linewidth=0.7)
+        ax2.set_axisbelow(True)
+
+    fig.suptitle(
+        "Is the change real brightening, or more cells being detected?",
+        fontsize=12.5, y=0.99,
+    )
+    # Wrapped by hand: matplotlib does not wrap figure text to the figure
+    # width, so a single long line runs off the edge of the saved image.
+    # Wrapped by hand, and anchored from the BOTTOM edge: matplotlib does not
+    # wrap figure text to the figure width, and va="top" would run the block
+    # downwards off the canvas.
+    fig.text(
+        0.006, 0.012,
+        "Left: the total rises while the same physically bright cells do not, so the extra light arrives in cells that previously\n"
+        "read zero. The fixed set also falls in 2020, picking up COVID, which the all-cells total barely shows.\n"
+        "Right: the 2017 increase in cell counts is concentrated in the dimmest bands and fades monotonically towards the\n"
+        "bright ones - the signature of a detection change rather than economic growth.",
+        fontsize=8, color="#55555f", ha="left", va="bottom", linespacing=1.6,
+    )
+    fig.tight_layout(rect=(0, 0.145, 1, 0.96))
+
+    out_path = config.OUTPUTS_FIGURES / "lights_detection_check.png"
+    fig.savefig(out_path)
+    plt.close(fig)
+    print(f"detection figure written to {out_path}")
+    return out_path
+
+
 def main() -> None:
     """Run the lights pipeline stages."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--stage", choices=["crop", "extract", "growth", "all"], default="crop",
-        help="which stage to run (default: crop)",
+        "--stage", choices=["crop", "extract", "growth", "diagnose", "all"],
+        default="crop", help="which stage to run (default: crop)",
     )
     parser.add_argument(
         "--years", type=int, nargs="+", default=None,
@@ -1104,6 +1291,9 @@ def main() -> None:
 
         raw = pd.read_csv(config.DATA_INTERIM / "lights_country_year_raw.csv")
         write_series_figure(growth, raw)
+
+    if args.stage in ("diagnose", "all"):
+        run_diagnostics_stage(years=args.years)
 
     if args.stage == "crop":
         print("\nStage 1 complete. Run --stage extract for country totals.")
