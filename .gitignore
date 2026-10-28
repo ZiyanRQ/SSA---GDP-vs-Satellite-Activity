@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+# Original downloads are never committed: they are large (V-Dem is ~400 MB,
+# each VIIRS raster is ~1 GB) and they are re-downloadable from the sources
+# listed in README.md. The folder itself is kept via data/raw/.gitkeep.
+data/raw/*
+!data/raw/.gitkeep
+
+# Intermediate files are rebuilt by the scripts in src/, so they are not
+# committed either (some, e.g. the per-country lights extraction, are large).
+data/interim/*
+!data/interim/.gitkeep
+
+# data/processed/ IS committed (the final panel is a small CSV and is useful
+# for cross-checking), but not any large or binary form of it.
+data/processed/*.parquet
+data/processed/*.feather
+data/processed/*.dta
+
+# Safety net: never commit a big raster / archive wherever it ends up.
+*.tif
+*.tiff
+*.tgz
+*.tar.gz
+*.zip
+*.7z
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ---------------------------------------------------------------------------
+# Jupyter
+# ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

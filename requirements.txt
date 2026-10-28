@@ -1,0 +1,42 @@
+# Python packages for this project.
+#
+# Install into a virtual environment from the project root:
+#     py -3.12 -m venv .venv
+#     .venv\Scripts\Activate.ps1      (Windows PowerShell)
+#     python -m pip install -r requirements.txt
+#
+# PYTHON VERSION: 3.12. The geospatial packages (geopandas, rasterio,
+# exactextract) are compiled extensions whose wheels lag new Python releases.
+# This machine also has 3.13 and 3.14, which may have no wheels for them;
+# 3.12.10 is installed and tested, so use `py -3.12` explicitly.
+#
+# This file lists the direct dependencies, unpinned, which is what to install
+# from. requirements-lock.txt records the exact versions of everything that was
+# installed (including transitive dependencies), so the environment behind the
+# results can be reproduced exactly:
+#     python -m pip install -r requirements-lock.txt
+# Regenerate it after any change here:
+#     python -m pip freeze > requirements-lock.txt
+
+# --- data handling ---
+pandas
+numpy
+
+# --- econometrics ---
+linearmodels      # PooledOLS, PanelOLS, RandomEffects, FirstDifferenceOLS
+statsmodels       # underlying stats, chi-squared p-value for the Hausman test
+scipy
+
+# --- night lights: raster and vector geospatial ---
+rasterio          # read the VIIRS GeoTIFF rasters
+geopandas         # read the country boundary file
+exactextract      # exact (area-weighted) zonal statistics
+rasterstats       # alternative zonal statistics, for cross-checking
+shapely
+pyproj
+
+# --- figures ---
+matplotlib
+
+# --- exploration ---
+jupyterlab
