@@ -224,8 +224,23 @@ exclusion groups do not overlap, the arithmetic reaches 48, the case studies
 survive, `check_years` really rejects out-of-range years) before any data is
 touched.
 
-Two things are deliberately left unset so that a decision has to be made rather
-than defaulted:
+### Night-lights decisions, fixed before any results were seen
+
+- **Negative radiance is clamped to zero** (`config.LIGHTS_CLAMP_NEGATIVES`),
+  decided 2026-10-28 before any country total was computed. Negative radiance
+  is residual noise from VIIRS's background subtraction and is not physically
+  meaningful. Measured on the 2015 crop: 8,523 negative cells out of 389
+  million (0.0022%), minimum −1.5 nW/cm²/sr, so the effect either way is
+  negligible against country totals in the millions. The counter-argument —
+  that keeping them is more faithful, and clamping adds a small upward bias if
+  the noise is symmetric — is recorded in `config.py`. `process_lights.py`
+  reports the exact magnitude removed per year so the claim can be checked.
+- **Sum, not mean, radiance within borders.** A sum scales with country area,
+  which country fixed effects absorb in levels; in log changes it is the
+  growth of total luminosity.
+
+Two more things are deliberately left unset so that a decision has to be made
+rather than defaulted:
 
 - `config.LIGHTS_NEAR_ZERO_THRESHOLD` is `None`. `ln(0)` is undefined, so a
   rule is needed for near-zero radiance totals — and it must be fixed *before*

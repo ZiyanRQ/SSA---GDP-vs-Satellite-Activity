@@ -435,6 +435,41 @@ VIIRS_VERSION_EXTENDED = "v2.2"
 VIIRS_VERSIONS_PERMITTED_MAIN = ["v2.1"]
 VIIRS_VERSIONS_PERMITTED_EXTENDED = ["v2.1", "v2.2"]
 
+# DECIDED 2026-10-28, before any country totals were computed: negative
+# radiance is clamped to zero before summing.
+#
+# Why: negative radiance is physically meaningless. It is residual noise left
+# by VIIRS's background subtraction, so a cell cannot really emit less than no
+# light. Clamping means a country's total is never reduced by noise, and "sum
+# of non-negative radiance" is a cleaner thing to state in the methods section.
+#
+# The honest counter-argument, recorded because it is real: keeping the
+# negatives is the more faithful treatment, and if the noise is symmetric then
+# clamping introduces a small upward bias.
+#
+# Scale of the choice, measured on the 2015 crop before deciding: 8,523
+# negative cells out of 389 million (0.0022%), the most negative being -1.5
+# nW/cm2/sr. Against country totals in the millions, the effect is negligible
+# either way. process_lights.py reports the exact magnitude removed per year,
+# so the claim can be checked rather than asserted.
+LIGHTS_CLAMP_NEGATIVES = True
+
+# Colour-scale limits for the quicklook previews, FIXED across all years.
+#
+# These must not be derived per year. A per-year scale (say each year's own
+# 99.9th percentile) re-normalises every map to itself, so two years cannot be
+# compared by eye - which is the whole point of a series. It also misleads in a
+# specific direction here: as more cells become lit, the percentile of lit
+# cells FALLS (2015: 2,832; 2021: 1,633), so later years would be drawn with a
+# more generous scale and look brighter than a like-for-like comparison
+# warrants.
+#
+# The maximum is set above the brightest year's 99.9th percentile of lit cells
+# so nothing routine is clipped; gas flares above it are drawn at the top
+# colour and the caption says so. Display only: no bearing on any total.
+LIGHTS_QUICKLOOK_VMIN = 0.25    # floor; log scales cannot take zero
+LIGHTS_QUICKLOOK_VMAX = 3000.0  # nW/cm2/sr
+
 # Rule for country-years whose summed radiance is zero or near zero: ln(0) is
 # undefined, so a rule is needed, and the brief requires fixing it BEFORE
 # looking at any results.
