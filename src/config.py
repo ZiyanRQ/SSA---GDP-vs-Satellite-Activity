@@ -52,8 +52,17 @@ SPI_INDICATOR_FILE = DATA_RAW / "SPI_data.csv"           # indicator level, 2004
 SPI_INDEX_FILE = DATA_RAW / "SPI_index.csv"              # published scores (NOT YET DOWNLOADED)
 SPI_METADATA_FILE = DATA_RAW / "SPI_full_metadata.csv"   # scoring rules (NOT YET DOWNLOADED)
 OXCGRT_FILE = DATA_RAW / "OxCGRT_nat_latest.csv"         # (NOT YET DOWNLOADED)
-BOUNDARY_FILE = DATA_RAW / "boundaries" / "ssa_boundaries.gpkg"  # (NOT YET CHOSEN)
-LIGHTS_RASTER_DIR = DATA_RAW / "viirs"                   # (NOT YET DOWNLOADED)
+
+# Country boundaries: Natural Earth 1:10m Admin 0, version 5.1.1, downloaded
+# 2026-10-28 from naciscdn.org. Public domain. DOWNLOADED and verified.
+BOUNDARY_FILE = (
+    DATA_RAW / "boundaries" / "natural_earth" / "ne_10m_admin_0_countries.shp"
+)
+# The VIIRS rasters sit directly in data/raw/, named
+# VNL_v21_npp_<YEAR>_global_vcmslcfg_c202205302300.average_masked.dat.tif.gz
+# They stay gzipped: GDAL reads inside them via /vsigzip/.
+LIGHTS_RASTER_DIR = DATA_RAW
+LIGHTS_RASTER_PATTERN = "VNL_v21_npp_{year}_global_*.average_masked.dat.tif.gz"
 
 # The earlier draft panel, for cross-checking only. It is never an input to the
 # pipeline: anything we need is rebuilt from the raw sources.
@@ -437,7 +446,31 @@ LIGHTS_NEAR_ZERO_THRESHOLD = None
 
 # Column in the boundary file holding the ISO3 code, so the join key is
 # explicit rather than guessed at merge time.
-BOUNDARY_ISO3_COLUMN = "ISO3"
+#
+# VERIFIED against the actual file: of Natural Earth's many three-letter code
+# columns, only ISO_A3 and ISO_A3_EH cover all 48 SSA countries. ADM0_A3 and
+# SOV_A3 miss South Sudan, WB_A3 misses DR Congo. Natural Earth sets this
+# column to "-99" where ISO status is disputed, which is how Somaliland is
+# excluded without becoming a duplicate Somalia.
+BOUNDARY_ISO3_COLUMN = "ISO_A3"
+BOUNDARY_ISO3_COLUMN_ALT = "ISO_A3_EH"  # equally complete, for cross-checking
+
+# Bounding box to crop the global rasters to, as (min_lon, min_lat, max_lon,
+# max_lat). Cropping once turns 11.6 GB per year into about 1.6 GB and avoids
+# repeated slow reads through the gzip.
+#
+# VERIFIED to contain every SSA polygon in the boundary file. The limits are
+# set by outlying islands, not the mainland, and a mainland-only guess would
+# have clipped two countries:
+#     west   -25.36  Cabo Verde
+#     east    63.49  Mauritius (Rodrigues)
+#     south  -46.97  South Africa (Prince Edward Islands, sub-Antarctic)
+#     north   27.29  Mauritania
+# Those outlying islands are unlit, so they add nothing to a radiance sum, but
+# they must not be cut off: a clipped polygon would silently lose whatever it
+# does contain. process_lights.py must re-check this box against the boundary
+# file rather than trusting these numbers.
+LIGHTS_CROP_BBOX = (-26.0, -47.0, 64.0, 28.0)
 
 
 # ===========================================================================
