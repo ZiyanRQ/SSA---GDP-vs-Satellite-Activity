@@ -239,6 +239,38 @@ touched.
   which country fixed effects absorb in levels; in log changes it is the
   growth of total luminosity.
 
+- **Near-zero rule set at 1.0 nW/cm²/sr** (`config.LIGHTS_NEAR_ZERO_THRESHOLD`).
+  It **binds on nothing**: of 336 country-years, none is below 100, the
+  smallest anywhere is Comoros at 214, and the dimmest country in the
+  estimation sample (Burundi) sits ~1,800× above the threshold. It exists for
+  reproducibility and to protect the extended-period and unbalanced runs.
+- **The lights step cost no countries.** The sample stays at 38 / 228.
+
+### Night-lights results and three things to watch
+
+The series is in `data/interim/lights_country_year.csv`; see
+`outputs/figures/lights_series.png`.
+
+1. **2017 moves the whole panel at once.** Median growth across the 38 is
+   +17.8% in 2017, against +1.0%, +7.2%, +2.4%, +5.2% and +10.4% in the other
+   years. Thirty-eight separate economies do not accelerate together like
+   that, so this looks like a change in the annual compositing rather than
+   economic growth. Year fixed effects absorb a shift common to all countries,
+   which is a point in favour of the specification — but it should be stated,
+   not left for a reader to find.
+2. **Ghana's lights more than tripled, 3.21× over 2015–2021** (Δln = 1.17),
+   while real GDP grew about 1.3×. The rise is steady rather than a jump, and
+   the brightest cell inside the border stays modest (138 → 248), so it is
+   *not* a gas flare: the brightening is spread across the country. It is
+   still very large, and since Ghana is a case study the cause needs
+   establishing before the gap is interpreted.
+3. **Nigeria's series is flare-driven.** Lights fell 0.90× over the period,
+   and the brightest cell inside the border dropped from 9,961 (2015) to 3,606
+   (2016) — the signature of Niger Delta flaring, which coincides with the
+   2016 oil-price collapse and attacks on oil infrastructure. Unlike Ghana's
+   offshore fields, this flaring is *inside* the land border and cannot be
+   excluded by the boundary.
+
 Two more things are deliberately left unset so that a decision has to be made
 rather than defaulted:
 

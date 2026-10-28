@@ -280,10 +280,19 @@ EXCLUDED_NO_COVID_DATA = {
     "STP": "No OxCGRT stringency data",
 }
 
-# Group 3: lost in the night-lights step. EMPTY until process_lights.py has
-# run: a country with missing or near-zero radiance cannot have a log change,
-# so it would break the balance. Add each code here with its reason, and every
-# count in the project follows from this one place.
+# Group 3: lost in the night-lights step. A country with missing or near-zero
+# radiance cannot have a log change, so it would break the balance.
+#
+# CHECKED 2026-10-28 and EMPTY: the lights step cost no countries. All 48 SSA
+# countries produced a usable total in every year 2015-2021, the smallest
+# being Comoros at 214 nW/cm2/sr (and Comoros is excluded for other reasons
+# anyway). The dimmest country in the estimation sample, Burundi, sits about
+# 1,800x above LIGHTS_NEAR_ZERO_THRESHOLD. So the sample stays at 38
+# countries / 228 rows.
+#
+# If this is ever re-run on different rasters or boundaries, add each lost
+# code here with its reason: every count in the project follows from this one
+# place.
 EXCLUDED_LIGHTS: dict[str, str] = {}
 
 # All exclusions together, for the dropped-countries table.
@@ -474,10 +483,22 @@ LIGHTS_QUICKLOOK_VMAX = 3000.0  # nW/cm2/sr
 # undefined, so a rule is needed, and the brief requires fixing it BEFORE
 # looking at any results.
 #
-# NOT YET DECIDED - deliberately left as None so that process_lights.py fails
-# loudly instead of applying an invented threshold. Set it during the lights
-# step, write the reasoning into the README, and do not change it afterwards.
-LIGHTS_NEAR_ZERO_THRESHOLD = None
+# DECIDED 2026-10-28 at 1.0 nW/cm2/sr, on the evidence below. The important
+# fact is that IT BINDS ON NOTHING: not one of the 336 country-years comes
+# near it, so no choice across a very wide range would change the sample. It
+# is set for reproducibility, and to protect the extended-period and
+# unbalanced runs where a dimmer country could appear, not because it does any
+# work here.
+#
+#   exact zeros in the panel                  0
+#   country-years below 1.0                   0
+#   country-years below 100                   0
+#   smallest total anywhere               214.3   Comoros 2015 (already excluded)
+#   smallest in the 38-country sample    1,832.5   Burundi 2015
+#
+# The dimmest country in the estimation sample sits about 1,800x above the
+# threshold, and its logarithm is perfectly well behaved.
+LIGHTS_NEAR_ZERO_THRESHOLD = 1.0
 
 # Column in the boundary file holding the ISO3 code, so the join key is
 # explicit rather than guessed at merge time.
@@ -658,9 +679,10 @@ def _self_check() -> None:
     print("Excluded - no stringency data: ", len(EXCLUDED_NO_COVID_DATA),
           sorted(EXCLUDED_NO_COVID_DATA))
     print("Excluded - lost to lights:     ", len(EXCLUDED_LIGHTS),
-          sorted(EXCLUDED_LIGHTS) or "(none yet - lights not processed)")
+          sorted(EXCLUDED_LIGHTS) or "(checked: the lights step cost none)")
     print(f"Expected balanced sample: {len(countries)} countries, {n_rows} rows")
-    print("Lights near-zero rule:", LIGHTS_NEAR_ZERO_THRESHOLD, "(must be set before Step 5)")
+    print(f"Lights rules: clamp negatives={LIGHTS_CLAMP_NEGATIVES}, "
+          f"near-zero threshold={LIGHTS_NEAR_ZERO_THRESHOLD}")
     print("All settings checks passed.")
 
 

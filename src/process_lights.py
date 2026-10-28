@@ -843,11 +843,229 @@ def run_extract_stage(years: list[int] | None = None) -> pd.DataFrame:
     return lights
 
 
+# ===========================================================================
+# STAGE 3: log changes, the near-zero rule, and the countries it costs
+# ===========================================================================
+
+
+def run_growth_stage(years: list[int] | None = None) -> pd.DataFrame:
+    """Turn country-year totals into log changes, and report any country lost.
+
+    This is where config.LIGHTS_NEAR_ZERO_THRESHOLD is applied. A country-year
+    at or below it has no usable measurement, and because the panel must stay
+    balanced the whole country goes, not just that year.
+    """
+    if config.LIGHTS_NEAR_ZERO_THRESHOLD is None:
+        raise NotImplementedError(
+            "Set config.LIGHTS_NEAR_ZERO_THRESHOLD before computing log "
+            "changes: the rule for zero or near-zero totals must be fixed "
+            "before any results are seen."
+        )
+
+    raw_path = config.DATA_INTERIM / "lights_country_year_raw.csv"
+    if not raw_path.exists():
+        raise FileNotFoundError(
+            f"{raw_path} is missing. Run stage 2 first: "
+            "python -m src.process_lights --stage extract"
+        )
+
+    lights = pd.read_csv(raw_path)
+    target_years = years if years is not None else config.YEARS_LEVELS
+    lights = lights[lights["year"].isin(target_years)].copy()
+    config.check_years(lights["year"].unique())
+
+    # --- apply the near-zero rule ----------------------------------------
+    threshold = config.LIGHTS_NEAR_ZERO_THRESHOLD
+    below = lights[lights["lights_sum"] <= threshold]
+    lost_to_lights = sorted(below["iso3c"].unique())
+
+    print(f"near-zero rule: lights_sum <= {threshold} nW/cm2/sr")
+    print(f"  country-years at or below it: {len(below)}")
+    print(f"  smallest total in the panel:  {lights['lights_sum'].min():,.1f} "
+          f"({lights.loc[lights['lights_sum'].idxmin(), 'iso3c']} "
+          f"{lights.loc[lights['lights_sum'].idxmin(), 'year']})")
+    if lost_to_lights:
+        print(f"  countries dropped: {lost_to_lights}")
+        print("  -> add these to config.EXCLUDED_LIGHTS with their reason")
+    else:
+        print("  countries dropped: none")
+
+    lights = lights[~lights["iso3c"].isin(lost_to_lights)].copy()
+
+    # --- log changes ------------------------------------------------------
+    lights = lights.sort_values(["iso3c", "year"])
+    lights["ln_lights"] = np.log(lights["lights_sum"])
+    # Lag WITHIN country. Grouping first is essential: on a plain sorted frame
+    # the first year of one country would difference against the last year of
+    # the one before it, which produces a nonsense number that looks fine.
+    lights["d_ln_lights"] = lights.groupby("iso3c")["ln_lights"].diff()
+
+    # 2015 exists only to give 2016 its growth rate, so it now drops out.
+    growth = lights[lights["year"].isin(config.YEARS_GROWTH)].copy()
+    config.check_years(growth["year"].unique(), stage="growth")
+
+    # --- checks -----------------------------------------------------------
+    n_countries = growth["iso3c"].nunique()
+    expected = n_countries * len(config.YEARS_GROWTH)
+    print(f"\nrows {len(growth)} for {n_countries} countries "
+          f"x {len(config.YEARS_GROWTH)} years (expected {expected})")
+    assert len(growth) == expected, "panel is not rectangular"
+    assert growth["d_ln_lights"].notna().all(), "missing growth rates"
+
+    out_path = config.LIGHTS_INTERIM
+    growth.to_csv(out_path, index=False)
+    print(f"lights series written to {out_path}")
+
+    return growth
+
+
+def report_sample_effect(growth: pd.DataFrame) -> None:
+    """Say what the lights step did to the estimation sample."""
+    have_lights = set(growth["iso3c"])
+    expected_sample = set(config.EXPECTED_BALANCED_COUNTRIES)
+
+    lost = sorted(expected_sample - have_lights)
+    print("\n--- effect on the sample ---")
+    print(f"countries in the balanced panel before lights: "
+          f"{len(expected_sample)}")
+    if lost:
+        print(f"lost to the lights step: {len(lost)} {lost}")
+        print(f"remaining: {len(expected_sample) - len(lost)} countries, "
+              f"{(len(expected_sample) - len(lost)) * len(config.YEARS_GROWTH)} rows")
+        print("\nAdd to config.EXCLUDED_LIGHTS, then re-run python -m src.config:")
+        for code in lost:
+            print(f'    "{code}": "Near-zero radiance",')
+    else:
+        print("lost to the lights step: none")
+        print(f"sample unchanged: {len(expected_sample)} countries, "
+              f"{len(expected_sample) * len(config.YEARS_GROWTH)} rows")
+
+
+def write_series_figure(growth: pd.DataFrame, raw: pd.DataFrame) -> Path:
+    """Chart the lights series for the estimation sample.
+
+    Two panels, because they answer different questions:
+      left   each country's total indexed to 2015, which shows how far apart
+             the countries travel and where the outliers are
+      right  the spread of year-on-year log changes, which shows whether any
+             YEAR moves the whole panel at once - the signature of a
+             compositing change rather than economic growth
+
+    Only the 38 countries in the estimation sample are drawn, since those are
+    what the models use.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    sample = config.EXPECTED_BALANCED_COUNTRIES
+    levels = raw[raw["iso3c"].isin(sample)].copy()
+
+    base = levels[levels["year"] == config.YEAR_LEVELS_START].set_index("iso3c")
+    levels["index_2015"] = (
+        100.0 * levels["lights_sum"].values
+        / base.loc[levels["iso3c"], "lights_sum"].values
+    )
+
+    highlight = {
+        "GHA": ("#e6194b", "Ghana"),
+        "KEN": ("#3cb44b", "Kenya"),
+        "NGA": ("#4363d8", "Nigeria"),
+        "ZAF": ("#f58231", "South Africa"),
+    }
+
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(13.5, 6), dpi=130,
+        gridspec_kw={"width_ratios": [1.35, 1]},
+    )
+
+    # --- left panel: indexed series -------------------------------------
+    for code, group in levels.groupby("iso3c"):
+        group = group.sort_values("year")
+        if code in highlight:
+            continue
+        ax1.plot(group["year"], group["index_2015"],
+                 color="#b9bcc6", linewidth=0.8, alpha=0.65, zorder=1)
+
+    median = levels.groupby("year")["index_2015"].median()
+    ax1.plot(median.index, median.values, color="#222222", linewidth=2.4,
+             zorder=3, label="median of the 38")
+
+    for code, (colour, label) in highlight.items():
+        group = levels[levels["iso3c"] == code].sort_values("year")
+        ax1.plot(group["year"], group["index_2015"], color=colour,
+                 linewidth=2.2, zorder=4, label=label)
+
+    ax1.axhline(100, color="#888888", linewidth=0.8, linestyle=":", zorder=0)
+    # A log scale is right here: it makes a doubling look the same size
+    # wherever it starts, so countries at very different levels are
+    # comparable. But matplotlib then labels its own minor ticks in scientific
+    # notation ("6 x 10^1") alongside our plain major labels, so the minor
+    # formatter is silenced.
+    ax1.set_yscale("log")
+    ax1.set_yticks([50, 75, 100, 150, 200, 300, 400])
+    ax1.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax1.get_yaxis().set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax1.set_ylim(levels["index_2015"].min() * 0.92,
+                 levels["index_2015"].max() * 1.08)
+    ax1.set_ylabel("total radiance, 2015 = 100 (log scale)")
+    ax1.set_xlabel("year")
+    ax1.set_title("Night-lights totals, indexed to 2015", fontsize=11)
+    ax1.legend(frameon=False, fontsize=8.5, loc="upper left")
+    ax1.grid(axis="y", color="#e8e8ec", linewidth=0.7)
+    ax1.set_axisbelow(True)
+
+    # --- right panel: spread of growth rates by year ---------------------
+    in_sample = growth[growth["iso3c"].isin(sample)]
+    years = sorted(in_sample["year"].unique())
+    data = [in_sample.loc[in_sample["year"] == y, "d_ln_lights"] for y in years]
+
+    parts = ax2.boxplot(data, tick_labels=years, widths=0.6,
+                        patch_artist=True, showfliers=True)
+    for patch in parts["boxes"]:
+        patch.set_facecolor("#cfd8e8")
+        patch.set_edgecolor("#4a5568")
+    for whisker in parts["whiskers"] + parts["caps"]:
+        whisker.set_color("#4a5568")
+    for med in parts["medians"]:
+        med.set_color("#c0392b")
+        med.set_linewidth(1.8)
+
+    ax2.axhline(0, color="#888888", linewidth=0.8, linestyle=":")
+    ax2.set_ylabel("change in log total radiance")
+    ax2.set_xlabel("year")
+    ax2.set_title("Year-on-year log changes across the 38", fontsize=11)
+    ax2.grid(axis="y", color="#e8e8ec", linewidth=0.7)
+    ax2.set_axisbelow(True)
+
+    fig.suptitle(
+        f"Sub-Saharan Africa night-lights series, VIIRS {config.VIIRS_VERSION} "
+        f"{config.VIIRS_BAND}, estimation sample of {len(sample)} countries",
+        fontsize=12.5, y=0.99,
+    )
+    fig.text(
+        0.005, 0.005,
+        "Totals are the sum of radiance within national land borders, "
+        "negatives clamped to zero. Note that 2017 shifts the whole panel up "
+        "at once, which growth in 38 separate economies would not do; year "
+        "fixed effects absorb a common shift of this kind.",
+        fontsize=7.5, color="#55555f", ha="left", va="bottom",
+    )
+    fig.tight_layout(rect=(0, 0.035, 1, 0.97))
+
+    out_path = config.OUTPUTS_FIGURES / "lights_series.png"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path)
+    plt.close(fig)
+    print(f"series figure written to {out_path}")
+    return out_path
+
+
 def main() -> None:
     """Run the lights pipeline stages."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--stage", choices=["crop", "extract", "all"], default="crop",
+        "--stage", choices=["crop", "extract", "growth", "all"], default="crop",
         help="which stage to run (default: crop)",
     )
     parser.add_argument(
@@ -876,11 +1094,18 @@ def main() -> None:
             ["iso3c", "lights_sum", "area_cells", "lights_mean"]
         ]
         print(top.to_string(index=False))
-        print(
-            "\nStage 2 complete. Next: set config.LIGHTS_NEAR_ZERO_THRESHOLD "
-            "from these totals, then compute log changes."
-        )
-    else:
+
+    if args.stage in ("growth", "all"):
+        growth = run_growth_stage(years=args.years)
+        report_sample_effect(growth)
+        print("\n--- d_ln_lights by year, across countries ---")
+        print(growth.groupby("year")["d_ln_lights"].agg(
+            ["median", "mean", "std", "min", "max"]).round(4).to_string())
+
+        raw = pd.read_csv(config.DATA_INTERIM / "lights_country_year_raw.csv")
+        write_series_figure(growth, raw)
+
+    if args.stage == "crop":
         print("\nStage 1 complete. Run --stage extract for country totals.")
 
 
