@@ -193,9 +193,9 @@ def check_years(years, stage: str = "levels", extended: bool = False) -> None:
 # codes, and build_panel.py decides who survives by actually checking for
 # missing values.
 #
-# ASSUMPTION TO VERIFY: this list was typed from the brief's description of the
-# World Bank SSA region, not read off a file. build_panel.py should compare it
-# against the region column in SPI_data.csv and report any difference.
+# VERIFIED 2026-10-29 against the region column in SPI_index.csv, which is the
+# World Bank's own grouping: it lists exactly 48 economies as Sub-Saharan
+# Africa, and the two sets match with no difference in either direction.
 SSA_ALL = [
     "AGO",  # Angola
     "BDI",  # Burundi
@@ -394,20 +394,47 @@ VDEM_EXCLUDE_CODES = ["ZZB", "SML"]  # Zanzibar, Somaliland
 # which is the circularity problem in the brief.
 SPI_DROP_INDICATORS = ["SPI.D5.2.1.SNAU", "SPI.D5.2.2.NABY"]
 # Dropped in one extra robustness check only (a borderline case).
-SPI_DROP_INDICATORS_EXTRA = ["SPI.D5.2.3.CPIBY"]
+# CORRECTED 2026-10-29: this was written as SPI.D5.2.3.CPIBY from the brief's
+# prose. The file shows dimension 5.2 holds ten indicators and the CPI base
+# year is SPI.D5.2.4.CPIBY; 5.2.3 is CNIN. Dropping a name that does not exist
+# would have silently done nothing and the robustness check would have
+# reproduced the main result exactly, looking like reassurance.
+SPI_DROP_INDICATORS_EXTRA = ["SPI.D5.2.4.CPIBY"]
 # Raw column holding each country-year's national accounts base year, the
 # source for the rebasing dummy.
 SPI_BASE_YEAR_COLUMN = "RAW.D5.2.2.NABY"
 
-# Base years stored as text in SPI_data.csv, converted by hand (brief s2.2).
-# ASSUMPTION TO VERIFY: the brief names ETH, UGA, GIN and SDN as the countries
-# with text values and gives "2015/2016", "2010/11" and "chained" as examples,
-# but the file has not been read yet. rebuild_spi.py must print every
-# non-numeric value it finds and stop if one is missing from this mapping, so
-# that nothing is silently guessed.
+# Base years stored as text in RAW.D5.2.2.NABY, converted by hand.
+#
+# READ OFF THE FILE 2026-10-29. The brief named ETH, UGA, GIN and SDN, which
+# is right, but the actual strings are messier than its examples. Every
+# distinct non-numeric value among the 48 SSA countries is listed here, and
+# rebuild_spi.py must stop if it meets one that is not, so nothing is guessed.
+#
+# The convention for a split fiscal year is to take the LATER calendar year,
+# since that is when the base period ends.
 SPI_BASE_YEAR_TEXT_FIXES: dict[str, str] = {
-    # Fill in once the actual text values have been listed from the file.
+    # Ethiopia. "20015/2016" is a typo in the source for 2015/2016: there is
+    # no year 20015, and Ethiopia's other entries are 2010/11 and 2015/2016.
+    "20015/2016": "2016",
+    "2015/2016": "2016",
+    "2010/11": "2011",
+    # Uganda.
+    "2009/10": "2010",
+    "2016/2017": "2017",
+    # Sudan. A long note rather than a year; the base period it describes is
+    # 1981/82, so the base year is 1982.
+    "1981/82. Reporting period switch from fiscal year to calendar year from "
+    "1996. Pre-1996 data converted to calendar year.": "1982",
 }
+
+# Values meaning "chained prices" rather than a fixed base year. Under the SPI
+# scoring rule chained prices score 1, the top mark, so these must not be
+# treated as a very old base year, which would score 0.
+SPI_BASE_YEAR_CHAINED_VALUES = [
+    # Guinea.
+    "Original chained constant price data are rescaled.",
+]
 
 # Rebasing events known from official statistics-office releases, which
 # override whatever SPI reports. Kenya: KNBS published the 2016-base revision
