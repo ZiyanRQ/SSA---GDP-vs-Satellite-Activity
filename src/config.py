@@ -479,6 +479,37 @@ LIGHTS_CLAMP_NEGATIVES = True
 LIGHTS_QUICKLOOK_VMIN = 0.25    # floor; log scales cannot take zero
 LIGHTS_QUICKLOOK_VMAX = 3000.0  # nW/cm2/sr
 
+# Brightness floor for the ALTERNATIVE lights measure used in robustness
+# checks: lights_sum_bright is the sum of radiance over cells at or above this
+# value in that year. It is an EXTRA column, never a replacement: lights_sum
+# remains the main measure and the main results are estimated on it.
+#
+# Why it exists: the diagnostics (--stage diagnose) showed that the 2017
+# compositing change adds light in cells near the detection limit, not in
+# cells that were already bright. Year fixed effects cannot remove that,
+# because it lands hardest on countries with the most marginal cells, so it
+# correlates with how dim a country is - close to what the model is trying to
+# explain. A measure that ignores dim cells is largely immune to it.
+#
+# WHY A PER-YEAR FLOOR AND NOT THE DIAGNOSTIC'S FIXED MASK. The diagnostic
+# uses cells bright in EVERY year, which is immune by construction but picks
+# cells using information from the whole period, the end of it included. That
+# is fine for measuring the instrument, which is all a diagnostic does, but it
+# must not be used for estimation: conditioning on cells that stayed bright
+# through 2021 discards genuine new development and selects on the outcome.
+# This floor is applied to each year separately, by the same rule every year,
+# so a newly developed area enters as soon as it becomes bright.
+#
+# The floor removes most, not all, of the artefact. From the band table the
+# 2016-to-2017 jump in cell counts is x1.47 at 0.5-1 nW but only x1.11 at
+# 5-10 and x1.04 above 50.
+#
+# Set at 5.0 BEFORE any model was estimated, and it is the same number the
+# diagnostic used. Recorded here because a brightness cut-off is a researcher
+# choice, and the defence against it being tuned to a result is that it was
+# fixed while there were no results to tune towards.
+LIGHTS_BRIGHT_FLOOR = 5.0
+
 # Rule for country-years whose summed radiance is zero or near zero: ln(0) is
 # undefined, so a rule is needed, and the brief requires fixing it BEFORE
 # looking at any results.
@@ -682,7 +713,8 @@ def _self_check() -> None:
           sorted(EXCLUDED_LIGHTS) or "(checked: the lights step cost none)")
     print(f"Expected balanced sample: {len(countries)} countries, {n_rows} rows")
     print(f"Lights rules: clamp negatives={LIGHTS_CLAMP_NEGATIVES}, "
-          f"near-zero threshold={LIGHTS_NEAR_ZERO_THRESHOLD}")
+          f"near-zero threshold={LIGHTS_NEAR_ZERO_THRESHOLD}, "
+          f"bright floor={LIGHTS_BRIGHT_FLOOR} (robustness measure only)")
     print("All settings checks passed.")
 
 

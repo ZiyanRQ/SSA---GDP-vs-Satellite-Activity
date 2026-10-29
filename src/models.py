@@ -105,19 +105,22 @@ ROBUSTNESS CHECKS (config holds the lists these use)
    10. Excluding the biggest accountability movers (GMB, ETH, BEN, MLI, MUS,
        CIV - to confirm from the data).
    11. Unbalanced panel (config.USE_UNBALANCED_PANEL = True).
-   12. BRIGHT-CELLS-ONLY LIGHTS. Added after the lights diagnostics found that
-       the 2017 compositing change adds light in cells near the detection
-       limit, not in cells that were already bright (see the README and
+   12. BRIGHT-CELLS LIGHTS: rerun the main models with d_ln_lights_bright in
+       place of d_ln_lights. Added after the lights diagnostics found that the
+       2017 compositing change adds light in cells near the detection limit,
+       not in cells that were already bright (see the README and
        process_lights.py --stage diagnose). Year fixed effects cannot remove
        it, because it lands on marginal cells and so hits dim countries
        hardest - it is correlated with the very thing the model is trying to
-       explain. A lights measure restricted to cells above a brightness floor
-       is immune to it by construction, and separate evidence suggests it is
-       the better economic series: the stable-mask total falls 4.3% in 2020,
-       picking up COVID, while the all-cells total falls only 1.6%.
-       If the main results hold on this measure, the detection artefact is not
-       driving them. If they do not, that is the finding, and the bright-cells
-       measure should become the main one.
+       explain. Separate evidence that the restricted series is the better
+       economic measure: the fixed-mask total falls 4.3% in 2020, picking up
+       COVID, while the all-cells total falls only 1.6%.
+       Everything else in the specification is held identical, so the only
+       thing that changes between the two tables is the lights measure.
+       If the main results hold, the detection artefact is not driving them.
+       If they do not, that IS the finding, and it belongs in the write-up
+       rather than being resolved by picking whichever measure reads better.
+       Decide and state which way that goes before running it.
    13. Extended period, 2016-2023 (config.YEARS_EXTENDED), which needs VIIRS
        v2.2 for 2022-2023. Report it separately and never merge it into the
        main results, because the v2.1-to-v2.2 change in compositing method sits

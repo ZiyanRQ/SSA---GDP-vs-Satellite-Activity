@@ -685,6 +685,63 @@ def clamp_raster(src_path: Path, dst_path: Path) -> dict:
     }
 
 
+def bright_path(year: int, version: str = config.VIIRS_VERSION) -> Path:
+    """Where the brightness-floored copy of a cropped raster goes."""
+    tag = version.replace(".", "")
+    return config.DATA_INTERIM / f"lights_ssa_{year}_{tag}_bright.tif"
+
+
+def floor_raster(src_path: Path, dst_path: Path, floor: float) -> dict:
+    """Write a copy with cells below `floor` set to zero.
+
+    This builds the alternative lights measure described in
+    config.LIGHTS_BRIGHT_FLOOR. Cells below the floor are zeroed rather than
+    marked missing, so the country's area is unchanged and only the radiance
+    attributed to dim cells disappears.
+
+    The rule is applied to each year on its own, by the same test every year,
+    so an area that genuinely becomes bright enters the measure when it does.
+
+    Returns how much radiance the floor removed, so the size of the difference
+    between the two measures is a reported number rather than a guess.
+    """
+    with rasterio.open(src_path) as src:
+        profile = src.profile.copy()
+        kept_cells = 0
+        removed_cells = 0
+        total_before = 0.0
+        total_after = 0.0
+
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        with rasterio.open(dst_path, "w", **profile) as dst:
+            for _, window in src.block_windows(1):
+                block = src.read(1, window=window)
+                total_before += float(block.sum(dtype=np.float64))
+
+                below = block < floor
+                # Count only cells that held some light, so the hundreds of
+                # millions of already-dark ocean and desert cells do not swamp
+                # the figure.
+                removed_cells += int(np.count_nonzero(below & (block > 0)))
+                kept_cells += int(np.count_nonzero(~below))
+
+                block = np.where(below, 0.0, block).astype("float32")
+                total_after += float(block.sum(dtype=np.float64))
+                dst.write(block, 1, window=window)
+
+    return {
+        "floor": floor,
+        "cells_kept": kept_cells,
+        "lit_cells_removed": removed_cells,
+        "total_before": total_before,
+        "total_after": total_after,
+        "pct_radiance_removed": (
+            100.0 * (total_before - total_after) / total_before
+            if total_before else 0.0
+        ),
+    }
+
+
 def load_ssa_boundaries():
     """Read the boundary file and return one row per SSA country.
 
@@ -783,6 +840,7 @@ def run_extract_stage(years: list[int] | None = None) -> pd.DataFrame:
 
     frames = []
     clamp_rows = []
+    floor_rows = []
     for year in target_years:
         crop = cropped_path(year)
         if not crop.exists():
@@ -809,11 +867,36 @@ def run_extract_stage(years: list[int] | None = None) -> pd.DataFrame:
             source = clamped
 
         print(f"{year}: extracting from {source.name}")
-        frames.append(extract_year(year, boundaries, source))
+        main = extract_year(year, boundaries, source)
+
+        # The alternative measure, built from the same clamped raster with a
+        # brightness floor applied. Extracted alongside rather than in a
+        # separate run so the two series can never drift out of step.
+        bright_file = bright_path(year)
+        if not bright_file.exists():
+            print(f"{year}: applying brightness floor "
+                  f"{config.LIGHTS_BRIGHT_FLOOR} -> {bright_file.name}")
+            stats = floor_raster(source, bright_file,
+                                 config.LIGHTS_BRIGHT_FLOOR)
+            stats["year"] = year
+            floor_rows.append(stats)
+            print(f"  {stats['lit_cells_removed']:,} lit cells zeroed, "
+                  f"{stats['pct_radiance_removed']:.2f}% of radiance removed")
+        else:
+            print(f"{year}: floored raster already exists")
+
+        print(f"{year}: extracting from {bright_file.name}")
+        bright = extract_year(year, boundaries, bright_file)
+        bright = bright[["iso3c", "year", "lights_sum"]].rename(
+            columns={"lights_sum": "lights_sum_bright"}
+        )
+
+        frames.append(main.merge(bright, on=["iso3c", "year"], how="left",
+                                 validate="one_to_one"))
 
     lights = pd.concat(frames, ignore_index=True)
-    lights = lights[["iso3c", "year", "lights_sum", "area_cells", "lights_mean",
-                     "lights_max", "lights_min"]]
+    lights = lights[["iso3c", "year", "lights_sum", "lights_sum_bright",
+                     "area_cells", "lights_mean", "lights_max", "lights_min"]]
     lights = lights.sort_values(["iso3c", "year"]).reset_index(drop=True)
 
     out_path = config.DATA_INTERIM / "lights_country_year_raw.csv"
@@ -825,6 +908,12 @@ def run_extract_stage(years: list[int] | None = None) -> pd.DataFrame:
         clamp_path = config.DATA_INTERIM / "lights_clamp_report.csv"
         clamp_report.to_csv(clamp_path, index=False)
         print(f"clamp report written to {clamp_path}")
+
+    if floor_rows:
+        floor_report = pd.DataFrame(floor_rows)
+        floor_report_path = config.DATA_INTERIM / "lights_floor_report.csv"
+        floor_report.to_csv(floor_report_path, index=False)
+        print(f"brightness-floor report written to {floor_report_path}")
 
     # --- checks -----------------------------------------------------------
     expected_rows = len(config.SSA_ALL) * len(target_years)
@@ -894,11 +983,29 @@ def run_growth_stage(years: list[int] | None = None) -> pd.DataFrame:
 
     # --- log changes ------------------------------------------------------
     lights = lights.sort_values(["iso3c", "year"])
-    lights["ln_lights"] = np.log(lights["lights_sum"])
-    # Lag WITHIN country. Grouping first is essential: on a plain sorted frame
-    # the first year of one country would difference against the last year of
-    # the one before it, which produces a nonsense number that looks fine.
-    lights["d_ln_lights"] = lights.groupby("iso3c")["ln_lights"].diff()
+
+    # Both measures get the same treatment: lights_sum is the main one, and
+    # lights_sum_bright is the brightness-floored alternative used only in a
+    # robustness check (see config.LIGHTS_BRIGHT_FLOOR).
+    measures = {"lights_sum": "", "lights_sum_bright": "_bright"}
+    for column, suffix in measures.items():
+        if column not in lights.columns:
+            continue
+        if (lights[column] <= 0).any():
+            n_bad = int((lights[column] <= 0).sum())
+            raise ValueError(
+                f"{n_bad} country-years have {column} <= 0, so its logarithm "
+                "is undefined. Check the near-zero rule and the brightness "
+                "floor before continuing."
+            )
+        lights[f"ln_lights{suffix}"] = np.log(lights[column])
+        # Lag WITHIN country. Grouping first is essential: on a plain sorted
+        # frame the first year of one country would difference against the
+        # last year of the one before it, giving a nonsense number that looks
+        # perfectly reasonable.
+        lights[f"d_ln_lights{suffix}"] = (
+            lights.groupby("iso3c")[f"ln_lights{suffix}"].diff()
+        )
 
     # 2015 exists only to give 2016 its growth rate, so it now drops out.
     growth = lights[lights["year"].isin(config.YEARS_GROWTH)].copy()
@@ -911,6 +1018,10 @@ def run_growth_stage(years: list[int] | None = None) -> pd.DataFrame:
           f"x {len(config.YEARS_GROWTH)} years (expected {expected})")
     assert len(growth) == expected, "panel is not rectangular"
     assert growth["d_ln_lights"].notna().all(), "missing growth rates"
+    if "d_ln_lights_bright" in growth.columns:
+        assert growth["d_ln_lights_bright"].notna().all(), (
+            "missing growth rates for the brightness-floored measure"
+        )
 
     out_path = config.LIGHTS_INTERIM
     growth.to_csv(out_path, index=False)
@@ -1248,6 +1359,113 @@ def write_detection_figure(report: pd.DataFrame, bands: pd.DataFrame) -> Path:
     return out_path
 
 
+def write_measure_comparison_figure(growth: pd.DataFrame,
+                                    raw: pd.DataFrame) -> Path:
+    """Compare the main lights measure with the brightness-floored one.
+
+    Left panel is the test the floor was built for: whether the panel-wide
+    2017 spike shrinks. Right panel shows where the two measures disagree
+    about individual countries, which is what the robustness check turns on.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    sample = config.EXPECTED_BALANCED_COUNTRIES
+    growth = growth[growth["iso3c"].isin(sample)]
+    raw = raw[raw["iso3c"].isin(sample)]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.5, 6.4), dpi=130)
+
+    # --- left: median growth by year, both measures ---------------------
+    by_year = growth.groupby("year").agg(
+        all_cells=("d_ln_lights", "median"),
+        bright=("d_ln_lights_bright", "median"),
+    )
+    ax1.plot(by_year.index, by_year["all_cells"], marker="o", linewidth=2.2,
+             color="#c0392b", label="all cells (main measure)")
+    ax1.plot(by_year.index, by_year["bright"], marker="s", linewidth=2.2,
+             color="#2c6fbb",
+             label=f"cells >= {config.LIGHTS_BRIGHT_FLOOR:g} nW/cm2/sr")
+    ax1.axhline(0, color="#999999", linewidth=0.8, linestyle=":")
+    # Placed to the RIGHT of the point and slightly below it: the 2017 value
+    # is the highest on the chart, so anything above it collides with the
+    # title.
+    ax1.annotate(
+        "the 2017 spike", xy=(2017, by_year.loc[2017, "all_cells"]),
+        xytext=(2017.35, by_year.loc[2017, "all_cells"] - 0.012),
+        fontsize=8.5, color="#c0392b", va="center",
+        arrowprops=dict(arrowstyle="->", color="#c0392b", linewidth=1.0),
+    )
+    ax1.set_ylabel("median change in log lights, across the 38")
+    ax1.set_xlabel("year")
+    ax1.set_title("Does the brightness floor remove the 2017 spike?",
+                  fontsize=11)
+    ax1.legend(frameon=False, fontsize=8.5, loc="upper left")
+    ax1.grid(axis="y", color="#e8e8ec", linewidth=0.7)
+    ax1.set_axisbelow(True)
+
+    # --- right: country by country, cumulative --------------------------
+    wide_all = raw.pivot(index="iso3c", columns="year", values="lights_sum")
+    wide_br = raw.pivot(index="iso3c", columns="year",
+                        values="lights_sum_bright")
+    first, last = config.YEAR_LEVELS_START, config.YEAR_LEVELS_END
+    cum = pd.DataFrame({
+        "ln_all": np.log(wide_all[last] / wide_all[first]),
+        "ln_bright": np.log(wide_br[last] / wide_br[first]),
+    })
+
+    ax2.scatter(cum["ln_all"], cum["ln_bright"], s=34, color="#7f8c9a",
+                alpha=0.8, zorder=2)
+
+    lo = float(min(cum.min().min(), 0)) - 0.2
+    hi = float(cum.max().max()) + 0.25
+    ax2.plot([lo, hi], [lo, hi], color="#333333", linewidth=1.0,
+             linestyle="--", zorder=1, label="the two measures agree")
+    ax2.axhline(0, color="#bbbbbb", linewidth=0.8)
+    ax2.axvline(0, color="#bbbbbb", linewidth=0.8)
+
+    label_these = ["GHA", "KEN", "NGA", "ZAF", "BDI", "LBR", "SWZ", "MWI"]
+    for code in label_these:
+        if code not in cum.index:
+            continue
+        x, y = cum.loc[code, "ln_all"], cum.loc[code, "ln_bright"]
+        colour = "#c0392b" if code in config.CASE_STUDIES else "#2c3e50"
+        ax2.scatter([x], [y], s=46, color=colour, zorder=3)
+        ax2.annotate(code, xy=(x, y), xytext=(5, 4),
+                     textcoords="offset points", fontsize=8.5, color=colour)
+
+    ax2.set_xlabel("cumulative log change, all cells")
+    ax2.set_ylabel(f"cumulative log change, cells >= "
+                   f"{config.LIGHTS_BRIGHT_FLOOR:g}")
+    ax2.set_title(f"Where the measures disagree, {first}-{last}", fontsize=11)
+    ax2.legend(frameon=False, fontsize=8.5, loc="upper left")
+    ax2.grid(color="#e8e8ec", linewidth=0.7)
+    ax2.set_axisbelow(True)
+
+    fig.suptitle(
+        "Main lights measure against the brightness-floored robustness measure",
+        fontsize=12.5, y=0.99,
+    )
+    fig.text(
+        0.006, 0.012,
+        "Left: the floor cuts the 2017 excess over the other years from +0.109 to +0.025, so most of the detection\n"
+        "artefact is gone. Right: points below the dashed line grew less once dim cells are excluded, which is what\n"
+        "expansion into newly lit areas looks like (Kenya); points above grew more, meaning already-bright areas\n"
+        "intensified (Ghana). The floor is not free: it leaves fewer cells, so the series is noisier - its standard\n"
+        "deviation is 0.178 against 0.122 - and it is unstable for the dimmest countries, where the surviving base\n"
+        "is small (Burundi).",
+        fontsize=8, color="#55555f", ha="left", va="bottom", linespacing=1.6,
+    )
+    fig.tight_layout(rect=(0, 0.185, 1, 0.96))
+
+    out_path = config.OUTPUTS_FIGURES / "lights_measure_comparison.png"
+    fig.savefig(out_path)
+    plt.close(fig)
+    print(f"measure comparison figure written to {out_path}")
+    return out_path
+
+
 def main() -> None:
     """Run the lights pipeline stages."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -1291,6 +1509,8 @@ def main() -> None:
 
         raw = pd.read_csv(config.DATA_INTERIM / "lights_country_year_raw.csv")
         write_series_figure(growth, raw)
+        if "d_ln_lights_bright" in growth.columns:
+            write_measure_comparison_figure(growth, raw)
 
     if args.stage in ("diagnose", "all"):
         run_diagnostics_stage(years=args.years)

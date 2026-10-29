@@ -288,11 +288,75 @@ That is why the median country sees +17.8% while the SSA aggregate sees only
 artefact is therefore **correlated with how dim a country is**, which year
 effects cannot remove.
 
-**Recommended robustness check:** re-run the main models on a lights measure
-restricted to cells above a brightness floor (the stable-mask logic). It is
-immune to the detection change by construction. Supporting evidence that it is
-also the more economically meaningful series: the stable-mask total **falls
-4.3% in 2020**, picking up COVID, while the all-cells total falls only 1.6%.
+**The robustness measure this produced.** `lights_sum_bright` is the sum of
+radiance over cells at or above **5.0 nW/cm²/sr in that year**
+(`config.LIGHTS_BRIGHT_FLOOR`). It is an **extra column, never a
+replacement**: `lights_sum` remains the main measure and the main results are
+estimated on it. Supporting evidence that the restricted series is also the
+more economically meaningful one: the fixed-mask total **falls 4.3% in 2020**,
+picking up COVID, while the all-cells total falls only 1.6%.
+
+*Why a per-year floor, not the diagnostic's fixed mask.* The diagnostic uses
+cells bright in **every** year, which is immune by construction but picks
+cells using information from the whole period — including its end. That is
+fine for measuring the instrument, which is all a diagnostic does, but it must
+not be used for estimation: conditioning on cells that stayed bright through
+2021 discards genuine new development and selects on the outcome. The floor is
+applied to each year separately by the same rule, so a newly developed area
+enters as soon as it becomes bright.
+
+The floor removes most, not all, of the artefact — the 2016→2017 jump in cell
+counts is ×1.47 at 0.5–1 nW but ×1.11 at 5–10 and ×1.04 above 50.
+
+**It worked.** The 2017 excess over the median of the other years falls from
+**+0.109 to +0.025**, so roughly three quarters of the artefact is gone. See
+`outputs/figures/lights_measure_comparison.png`.
+
+**It is not free, and the costs should be stated with the result:**
+
+- The series is **noisier**: standard deviation 0.178 against 0.122. Fewer
+  cells means more sampling noise, and under fixed effects extra measurement
+  error means more attenuation towards zero.
+- It is **unstable for the dimmest countries**, where little survives the
+  floor. Burundi goes from ×3.00 to ×7.52, Liberia ×2.21 to ×3.97 — those are
+  small, volatile bases, not findings.
+- The two measures correlate 0.848, and **several countries change sign**
+  (Eswatini +0.12 → −0.26, Malawi +0.20 → −0.14, Zimbabwe, Sudan). The
+  robustness check is therefore a real test, not a formality.
+
+**The case studies behave exactly as the decomposition predicted**, which is
+useful independent corroboration:
+
+| | All cells | Bright cells | Reading |
+| --- | --- | --- | --- |
+| **Ghana** | ×3.21 | **×3.57** | Grows *more* under the floor — already-lit areas intensifying, so not a detection artefact |
+| **Kenya** | ×1.90 | **×1.45** | Shrinks under the floor — expansion into newly lit, dim areas, i.e. electrification |
+
+Ghana's tripling survives the measure built specifically to remove the
+artefact, which is strong evidence it is real. Kenya's rise is substantially
+grid expansion. Those were derived from completely separate evidence (the
+cell-level decomposition) and agree.
+
+### What has been done to the data
+
+Only one step changes any value, and it is the clamp:
+
+| Step | Alters values? |
+| --- | --- |
+| Crop to the SSA box | No — subsetting only |
+| **Clamp negatives to zero** | **Yes — 20,680 cells, 0.00065% of radiance** |
+| Sum within borders | No — aggregation |
+| `ln`, then first difference | No — standard transformation |
+| Near-zero threshold (1.0) | No — binds on zero observations |
+| Brightness floor (5.0) | Builds a **separate** column, leaves `lights_sum` untouched |
+
+The downloaded `.gz` rasters are never written to; the crop is a faithful copy
+and the clamp is a separate file beside it. The previews (max-pooling, fixed
+colour scale) and the diagnostics are display-only and read-only respectively.
+
+The brightness floor is a researcher choice, so: it was fixed at 5.0 **before
+any model was estimated**, it is the same value the diagnostic used, and it
+adds a column rather than altering the main series.
 
 #### 2. Ghana's tripling is mostly real, and not what Kenya's is
 
