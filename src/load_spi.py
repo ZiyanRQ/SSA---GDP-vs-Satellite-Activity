@@ -105,6 +105,11 @@ def load_spi_published(raw_dir: Path | None = None) -> pd.DataFrame:
     verify_index_construction(spi)
 
     spi = spi.rename(columns={"date": "year", **PILLAR_COLUMNS})
+
+    # Printed before the window filter, while the extended years are still
+    # here, so the brief's variation figures can be reproduced on the sample
+    # they came from.
+    report_brief_variation_reference(spi)
     spi = spi[spi["iso3c"].isin(config.SSA_ALL)
               & spi["year"].isin(config.YEARS_LEVELS)].copy()
     config.check_years(spi["year"].unique())
@@ -112,6 +117,36 @@ def load_spi_published(raw_dir: Path | None = None) -> pd.DataFrame:
     keep = ["iso3c", "country", "year"] + list(PILLAR_COLUMNS.values())
     spi = spi[keep].sort_values(["iso3c", "year"]).reset_index(drop=True)
     return spi
+
+
+def report_brief_variation_reference(spi: pd.DataFrame) -> None:
+    """Reproduce the within/between SDs the brief quotes, on their own sample.
+
+    The brief gives "within-country SD 5.5 / between 10.9" for the overall
+    score, "4.2 / 14.2" for Pillar 4 and a correlation of 0.78 between them.
+    Those are not the estimation sample's figures, and chasing the difference
+    wasted time once. They are ALL 48 SSA COUNTRIES OVER 2016-2023, which is
+    reproduced here to within rounding. check_spi() prints the estimation
+    sample's own figures, which are the ones to quote in the dissertation.
+    """
+    # 2016-2023, not YEARS_EXTENDED_LEVELS: including 2015 would change the
+    # Pillar 4 figure, because Pillar 4 has 2015 values even though the
+    # overall index does not. See the SPI 2015 trap in verify_sources.py.
+    years = config.YEARS_EXTENDED
+    wide = spi[spi["iso3c"].isin(config.SSA_ALL) & spi["year"].isin(years)]
+
+    print(f"\n  reference: all {wide['iso3c'].nunique()} SSA countries, "
+          f"{min(years)}-{max(years)} - the sample the brief's figures use")
+    print("    (brief: overall 5.5 / 10.9, pillar 4 4.2 / 14.2, "
+          "correlation 0.78)")
+    for column in ["spi_overall", "spi_p4_sources"]:
+        series = wide.dropna(subset=[column])
+        means = series.groupby("iso3c")[column].transform("mean")
+        within = (series[column] - means).std()
+        between = series.groupby("iso3c")[column].mean().std()
+        print(f"    {column:<16} within {within:5.2f}  between {between:5.2f}")
+    corr = wide[["spi_overall", "spi_p4_sources"]].corr().iloc[0, 1]
+    print(f"    correlation of overall with pillar 4: {corr:.3f}")
 
 
 def check_region_definition(spi: pd.DataFrame) -> None:
@@ -225,18 +260,28 @@ def check_spi(spi: pd.DataFrame) -> None:
 
     # Within vs between variation, which decides how much the fixed-effects
     # estimate has to work with.
-    print("\nwithin- vs between-country standard deviation, 38-country "
-          "sample (brief: overall 5.5 within, 10.9 between; P4 4.2 / 14.2):")
+    # The brief quotes "within-country SD 5.5 / between 10.9" and "P4 4.2 /
+    # 14.2" and a correlation of 0.78. Those are on ALL 48 SSA COUNTRIES OVER
+    # 2016-2023, where this data reproduces them as 5.54 / 10.85, 4.21 /
+    # 14.15 and 0.778. On the estimation sample they are smaller, because the
+    # sample is 38 countries over 6 years rather than 48 over 8. The sample
+    # figures are the ones to quote: they are the variation the fixed-effects
+    # estimator actually has. Both are printed so the difference is visible
+    # rather than a surprise later.
+    print("\nwithin- vs between-country standard deviation:")
+    print("  ESTIMATION SAMPLE (38 countries, 2016-2021) - quote these:")
     for column in ["spi_overall", "spi_p4_sources", "spi_p5_infra"]:
         series = in_sample.dropna(subset=[column])
         means = series.groupby("iso3c")[column].transform("mean")
         within = (series[column] - means).std()
         between = series.groupby("iso3c")[column].mean().std()
-        print(f"  {column:<16} within {within:5.2f}  between {between:5.2f}")
+        print(f"    {column:<16} within {within:5.2f}  between {between:5.2f}")
 
     corr = in_sample[["spi_overall", "spi_p4_sources"]].corr().iloc[0, 1]
-    print(f"\ncorrelation of overall with pillar 4 (brief says 0.78): "
-          f"{corr:.2f}")
+    print(f"    correlation of overall with pillar 4: {corr:.3f}")
+
+    print("\n  (for the all-48, 2016-2023 figures the brief quotes, see the "
+          "reference block printed above, before the filtering)")
 
 
 def main() -> None:

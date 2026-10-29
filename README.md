@@ -22,10 +22,7 @@ Full background, decisions and supervisor feedback:
 
 ## Status
 
-Step 1 (repository scaffolding and environment) is done. Every module in `src/`
-is a **documented stub**: each docstring states the inputs, outputs, planned
-steps and the checks to run, and `main()` raises `NotImplementedError`. No data
-has been processed yet.
+All six data sources are loaded and verified. Nothing has been estimated yet.
 
 The environment is built and tested: Python 3.12.10 in `.venv`, with GDAL 3.12.2
 and PROJ 9.8.1 loading, zonal statistics verified against a hand-computed sum,
@@ -33,14 +30,18 @@ and `PanelOLS` verified to recover a known slope exactly.
 
 | Step | Module | Status |
 | --- | --- | --- |
-| 1 | `src/load_wdi.py` | not started |
-| 2 | `src/load_vdem.py` | not started |
-| 3a | `src/load_spi.py` | not started |
-| 3b | `src/rebuild_spi.py` | not started |
-| 4 | `src/load_oxcgrt.py` | not started |
-| 5 | `src/process_lights.py` | not started |
-| 6 | `src/build_panel.py` | not started |
-| 7 | `src/models.py` | not started |
+| 1 | `src/load_wdi.py` | done, run on the real data |
+| 2 | `src/load_vdem.py` | done, run on the real data |
+| 3a | `src/load_spi.py` | done, run on the real data |
+| 3b | `src/rebuild_spi.py` | done, run on the real data |
+| 4 | `src/load_oxcgrt.py` | done, run on the real data |
+| 5 | `src/process_lights.py` | done, all 7 years processed |
+| 5a | `src/verify_sources.py` | done, all checks pass |
+| 6 | `src/build_panel.py` | documented stub |
+| 7 | `src/models.py` | documented stub |
+
+Each of the seven interim tables re-runs **byte-identically** from the raw
+files, so the pipeline is reproducible and not merely runnable.
 
 ## Layout
 
@@ -151,9 +152,17 @@ python -m src.load_spi
 python -m src.rebuild_spi
 python -m src.load_oxcgrt
 python -m src.process_lights
+
+# 5. gate: check the six sources fit together before merging them
+python -m src.verify_sources
+
 python -m src.build_panel
 python -m src.models
 ```
+
+`verify_sources` exits non-zero if anything would make the merge silently
+wrong, so it can be run as a gate. It is the step that caught the SPI 2015
+trap described below.
 
 Run every command from the project root, using `python -m src.<module>` rather
 than `python src/<module>.py`. The `-m` form runs `src` as a package, which is
@@ -223,6 +232,67 @@ quietly estimating on a different sample.
 exclusion groups do not overlap, the arithmetic reaches 48, the case studies
 survive, `check_years` really rejects out-of-range years) before any data is
 touched.
+
+`python -m src.verify_sources` then checks that the six sources fit *together*,
+which no individual loader can see: clean merge keys, no duplicate
+`(iso3c, year)`, year stored as an integer rather than text, identical country
+coverage, no missing values anywhere in the 38-country sample, and a dry-run
+merge that lands on 38 × 6 = 228 rows. All checks currently pass.
+
+### Reconciled against the brief
+
+Four figures in the brief did not match what the data gives. All four are now
+explained, and in each case the explanation was found rather than assumed.
+
+| Brief says | This repo gets | Why |
+| --- | --- | --- |
+| 23 base-year changes 2016–21 among the 40; 28 events / 24 countries 2016–22; 24 countries across all 48 | 27 / 32 / 28 countries | The brief counted **before** doing its own listed fixes. Treating the text base years as unreadable and dropping the Kenya release-date override reproduces **all three figures exactly**. The four extra events are ETH 2018, SDN 2018, UGA 2020 and KEN 2021 — precisely the fixes the brief asked for. |
+| SPI within-country SD 5.5, between 10.9; Pillar 4 4.2 / 14.2; overall–P4 correlation 0.78 | 4.80 / 8.93, 3.75 / 11.60, 0.74 | The brief's figures are on **all 48 SSA countries over 2016–2023**, where this repo reproduces them as 5.54 / 10.85, 4.21 / 14.15 and 0.778. The estimation sample is 38 countries over 2016–2021, so its own figures are the ones to quote. |
+| Kenya Pillar 5 rises 45 → 70 | 45 → 65 | The 70 is Kenya's **2022** value, confirmed from the index file (2021 = 65.0, 2022 = 70.0, 2023 = 70.0). Kenya's base year only appears in SPI from 2022, which is what the brief's own NABY path says. |
+| Ghana SPI overall 2021 = 66.2 | 66.15 | Rounding: 66.1479 to one decimal is 66.1. Ghana's 2023 value is 66.245, which does round to 66.2. |
+
+One figure is **not** fully reconciled: the brief's V-Dem accountability
+within/between SDs of 0.141 / 0.667. The closest reading includes Somaliland
+and Zanzibar as separate units (0.136 / 0.670), which `load_vdem.py`
+deliberately drops because they are not states in the WDI or SPI panels.
+Across every plausible country set and window the within SD lands between
+0.128 and 0.163, so the substantive point — between-country variation is
+roughly 4–5× within — holds under all of them.
+
+### The SPI 2015 trap
+
+The published SPI **overall** index starts in 2016, but Pillars 1, 3 and 4
+carry 2015 values. So `spi_published.csv` has a 2015 row that is *partly*
+filled. Merging SPI onto the 2015–2021 levels grid would hand the panel pillar
+values with no published overall index behind them, and nothing would complain.
+
+SPI is therefore merged on **2016–2021 only**, which is all the model needs:
+SPI enters as a level on the growth years and is never lagged or differenced.
+`verify_sources.py` asserts the 2015 overall column is still empty, so that if
+a future SPI vintage fills it in, the merge window gets reconsidered rather
+than a stale comment left behind.
+
+### The night-lights totals, cross-checked against a second method
+
+Every other variable is a published number that this repo only reads and
+reshapes. The lights totals are the one variable *computed* here, so a
+zonal-statistics error would not announce itself — the numbers would still be
+plausible, still the right shape, and still produce a regression.
+
+Checked on ten countries (both case studies, the largest and smallest by area,
+two islands) for 2015 and 2021, against `rasterstats` with whole-cell
+assignment instead of `exactextract`'s area weighting:
+
+- radiance totals agree to a **median 0.030%**, worst case 0.46%
+- the log growth rates agree to at most **0.0016 log points**, 0.25% of the
+  growth itself
+- the disagreement is unsystematic (mean −0.031%) and is largest exactly where
+  theory says it should be: Cape Verde 0.46% and Mauritius 0.19%, islands
+  where border cells are a large share of the total, against under 0.08% for
+  DR Congo, Nigeria, South Africa and Chad
+
+Border-cell differences are nearly constant over time, so they difference out
+of the growth rate, which is what the model uses.
 
 ### Night-lights decisions, fixed before any results were seen
 
@@ -416,16 +486,23 @@ Assumptions still to verify against the actual data are marked
 
 ## Open tasks
 
-1. Download VIIRS v2.1 annual composites 2015–2021 (and v2.2 for 2022–2023 for
-   the extended check), choose a boundary file, compute lights growth, handle
-   gas flares and near-zero totals, and record any further countries lost in
-   `config.EXCLUDED_LIGHTS`.
-2. Rebuild SPI with the official weights, validating against the published
-   `SPI.INDEX` first; also build the Pillar 4 and no-CPIBY variants.
-3. Build the rebasing dummy: convert the text base years (ETH, UGA, GIN, SDN),
-   check Liberia's backwards base year in 2019, use the KNBS September 2021
-   date for Kenya.
-4. Add OxCGRT annual stringency (0 for 2016–2019) and oil rents; get GSS
+Done since the brief was written: VIIRS 2015–2021 processed (no countries lost,
+so `config.EXCLUDED_LIGHTS` stays empty), SPI rebuilt against the published
+index, the rebasing dummy built with all four text conversions, OxCGRT
+stringency added, and every count in the brief reconciled.
+
+Still open:
+
+1. Build the panel (`src/build_panel.py`) and estimate the models
+   (`src/models.py`). Nothing has been estimated yet.
+2. Decide the accountability scale (raw, standardised, or V-Dem's `osp` 0–1),
+   and whether to centre SPI and accountability.
+3. Add oil rents to the panel (already loaded in `wdi_long.csv`) and get GSS
    oil/non-oil GDP for the Ghana case study.
-5. Decide the accountability scale (raw, standardised, or V-Dem's `osp` 0–1).
+4. Verify the Ghana *dumsor* load-shedding timeline against Ghana Grid Company
+   or Energy Commission records. If load shedding ran into 2016, the 2015
+   lights baseline is artificially dark and Ghana's tripling is partly a
+   recovery from it — this is the one open question that could change a
+   headline number.
+5. Download VIIRS v2.2 for 2022–2023 for the extended robustness check.
 6. Read Martinez (2022) for his exact specification; verify every citation.

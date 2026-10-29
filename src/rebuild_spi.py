@@ -351,14 +351,33 @@ def check_rebasing(base: pd.DataFrame) -> None:
                                     "iso3c"].nunique())
     print(f"rebasing events 2016-2021 in the 38-country sample: {n_events} "
           f"across {n_countries} countries")
-    print(f"  (the brief reports 23 events among its 40-country set; the "
-          f"sample here is 38, so the counts need not be equal)")
 
     all_ssa = int(window["rebased"].sum())
     all_countries = int(window.loc[window["rebased"] == 1,
                                    "iso3c"].nunique())
     print(f"across all 48 SSA countries: {all_ssa} events in "
-          f"{all_countries} countries (brief says 24 countries)")
+          f"{all_countries} countries")
+
+    # RECONCILED AGAINST THE BRIEF, which reports three figures: 23 base-year
+    # changes 2016-21 among its 40 countries, 28 events in 24 countries
+    # 2016-22, and 24 countries across all 48 in 2016-21. All three are
+    # reproduced exactly by counting the way the brief did - BEFORE the fixes
+    # the brief itself lists as needed:
+    #
+    #   - the text base years (ETH, UGA, SDN) left unreadable rather than
+    #     converted, and
+    #   - no Kenya override for the KNBS September 2021 release date.
+    #
+    # The four extra events here are exactly ETH 2018, SDN 2018, UGA 2020 and
+    # KEN 2021: the fixes, applied. So the higher count is the corrected one,
+    # not a discrepancy to resolve. Quote these figures, not the brief's, and
+    # say the counting rule.
+    print("  (the brief's 23 / 28 / 24 are the same data counted before its "
+          "own listed fixes:")
+    print("   text base years unconverted and no Kenya release-date override. "
+          "The four")
+    print("   extra events here are ETH 2018, SDN 2018, UGA 2020, KEN 2021 - "
+          "the fixes.)")
 
     backwards = base[base["flag"] == "base year moves backwards"]
     if len(backwards):
