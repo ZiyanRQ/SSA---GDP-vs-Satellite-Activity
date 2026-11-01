@@ -40,6 +40,7 @@ and `PanelOLS` verified to recover a known slope exactly.
 | 6 | `src/build_panel.py` | done, 38 countries / 228 rows |
 | 6a | `src/verify_panel.py` | done, all checks pass |
 | 7 | `src/models.py` | done, estimated; headline results null |
+| 8 | `src/dashboard.py` | done, `outputs/dashboard.html` |
 
 Each of the seven interim tables re-runs **byte-identically** from the raw
 files, so the pipeline is reproducible and not merely runnable.
@@ -163,6 +164,9 @@ python -m src.build_panel
 python -m src.verify_panel
 
 python -m src.models          # main, estimators, check model, robustness
+
+# 7. the interactive dashboard (writes one self-contained HTML file)
+python -m src.dashboard --open
 ```
 
 `verify_sources` exits non-zero if anything would make the merge silently
@@ -666,6 +670,44 @@ the statistic is not interpretable in the usual way and is reported rather
 than relied on. Fixed effects remain the main estimator on the design
 argument — unobserved country characteristics are certain to be correlated
 with statistical capacity — not on a test that did not run cleanly.
+
+## The dashboard
+
+`python -m src.dashboard` writes **`outputs/dashboard.html`** — one
+self-contained file, about 135 KB, that opens straight from disk with no
+server and no internet connection.
+
+Countries are ranked by **divergence**, which can be read four ways, so the
+ranking is sortable rather than fixed:
+
+| Sort | Question it answers |
+| --- | --- |
+| Mean gap (signed) | Did lights consistently outgrow reported GDP? |
+| Mean \|gap\| | How big is the disagreement, ignoring direction? |
+| Volatility | Is a small average gap hiding large swings both ways? |
+| Worst year | Where would a case study start? |
+
+Selecting a country loads its growth trace (Δln GDP against both lights
+measures, with the gap drawn as the vertical distance it literally is), its
+gap against the model's prediction with rebasing years flagged, its position
+in the panel-wide distribution, and a cross-section scatter against capacity,
+accountability, electrification or agriculture share.
+
+**Python does every calculation; the page only draws.** Nothing is computed in
+JavaScript that could disagree with the pipeline, every figure is read from
+the committed tables rather than hard-coded, and `dashboard.py` re-checks in
+the payload itself that `gap = Δln GDP − Δln lights` and
+`gap = prediction + residual` for all 228 observations before writing the file.
+Re-run `models.py` and the dashboard changes with it.
+
+The charts are hand-written SVG rather than a plotting library: it keeps the
+project to its existing dependencies and gives exact control over the layout.
+
+> The page carries the same warning this README does: **a large divergence is
+> not evidence of misreporting.** Lights miss agriculture, the informal economy
+> and off-grid activity, they pick up flaring and electrification, and the 2017
+> detection change inflates growth for dim countries specifically. The ranking
+> is for choosing where to look.
 
 ## Open tasks
 

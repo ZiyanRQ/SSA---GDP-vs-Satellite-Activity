@@ -716,7 +716,16 @@ def write_case_study_figure(panel: pd.DataFrame, result) -> None:
             f"(max difference {identity:.3e}); the decomposition assumed here "
             "no longer holds."
         )
-    print(f"\n  prediction = fitted_values + estimated_effects, checked "
+    # Written out per country-year, because the dashboard and the case-study
+    # write-up both need the prediction and the residual for every row, not
+    # only for the two case studies.
+    config.OUTPUTS_TABLES.mkdir(parents=True, exist_ok=True)
+    fitted_path = config.OUTPUTS_TABLES / "panel_fitted.csv"
+    merged[["iso3c", "year", config.OUTCOME_SIGNED, "prediction",
+            "residual"]].to_csv(fitted_path, index=False)
+    print(f"\n  per-observation fits written to {fitted_path}")
+
+    print(f"  prediction = fitted_values + estimated_effects, checked "
           f"against the identity (max difference {identity:.1e})")
     print(f"  correlation of actual gap with prediction: "
           f"{np.corrcoef(actual, prediction)[0, 1]:.3f}")

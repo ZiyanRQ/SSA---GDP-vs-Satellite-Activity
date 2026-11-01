@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSA Divergence Monitor</title>
+<style>
+:root{
+  --bg:#04070e; --bg2:#070b15;
+  --panel:rgba(12,18,31,.78); --panel-solid:#0b1120;
+  --edge:rgba(96,132,178,.20); --edge-hot:rgba(53,224,208,.45);
+  --ink:#e9eff8; --muted:#8094ad; --faint:#55657d;
+  --cyan:#35e0d0; --violet:#9d7bff; --amber:#ffb347; --rose:#ff4f8b;
+  --grid:rgba(120,160,200,.09);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  font-size:14px; line-height:1.5; min-height:100vh;
+  background-image:
+    radial-gradient(1100px 620px at 18% -10%, rgba(53,224,208,.09), transparent 60%),
+    radial-gradient(900px 560px at 88% 4%, rgba(157,123,255,.10), transparent 62%),
+    linear-gradient(180deg,#04070e 0%, #060a13 55%, #04070e 100%);
+  background-attachment:fixed;
+}
+/* faint instrument grid over the whole page */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:64px 64px; mask-image:radial-gradient(circle at 50% 30%,#000 10%,transparent 85%);
+}
+.wrap{position:relative; z-index:1; max-width:1680px; margin:0 auto; padding:18px 20px 56px}
+
+.label{font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint)}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+/* ---------- header ---------- */
+header{
+  display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;
+  padding:14px 18px; margin-bottom:16px;
+  background:var(--panel); border:1px solid var(--edge); border-radius:14px;
+  backdrop-filter:blur(8px);
+}
+.brand{display:flex; align-items:center; gap:13px; min-width:260px}
+.dish{width:34px;height:34px;flex:none}
+.brand h1{margin:0; font-size:15px; letter-spacing:.06em; font-weight:650}
+.brand p{margin:2px 0 0; font-size:11px; color:var(--muted)}
+.readouts{display:flex; flex-wrap:wrap; gap:9px}
+.ro{
+  min-width:92px; padding:7px 11px; border-radius:9px;
+  background:rgba(7,12,22,.72); border:1px solid var(--edge);
+}
+.ro b{display:block; font-family:var(--mono); font-size:16px; font-weight:600; letter-spacing:-.01em}
+.ro span{display:block; font-family:var(--mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-top:1px}
+.live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--cyan);
+      box-shadow:0 0 9px var(--cyan); animation:pulse 2.4s infinite; margin-right:6px; vertical-align:middle}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ---------- layout ---------- */
+.grid{display:grid; grid-template-columns:376px minmax(0,1fr); gap:16px; align-items:start}
+.row2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px}
+@media (max-width:1180px){ .grid{grid-template-columns:1fr} .row2{grid-template-columns:1fr} }
+
+.card{
+  background:var(--panel); border:1px solid var(--edge); border-radius:14px;
+  padding:14px 16px 16px; backdrop-filter:blur(8px); position:relative; overflow:hidden;
+}
+.card::after{ /* corner tick, instrument-panel detail */
+  content:""; position:absolute; top:0; right:0; width:34px; height:34px;
+  background:linear-gradient(225deg, rgba(53,224,208,.16), transparent 62%);
+  pointer-events:none;
+}
+.card h2{margin:0 0 2px; font-size:12px; letter-spacing:.13em; text-transform:uppercase; font-weight:650; color:#cfe0f2}
+.card .sub{margin:0 0 12px; font-size:11px; color:var(--muted); line-height:1.45}
+
+/* ---------- sort tabs ---------- */
+.tabs{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:11px}
+.tab{
+  font-family:var(--mono); font-size:10px; letter-spacing:.07em; text-transform:uppercase;
+  padding:5px 9px; border-radius:7px; cursor:pointer; color:var(--muted);
+  background:rgba(8,13,24,.8); border:1px solid var(--edge); transition:.14s;
+}
+.tab:hover{color:var(--ink); border-color:var(--edge-hot)}
+.tab[aria-selected="true"]{background:rgba(53,224,208,.13); color:var(--cyan); border-color:var(--edge-hot)}
+
+/* ---------- ranking ---------- */
+.rank{max-height:620px; overflow-y:auto; margin:0 -6px; padding:0 6px}
+.rank::-webkit-scrollbar{width:7px}
+.rank::-webkit-scrollbar-thumb{background:rgba(96,132,178,.3); border-radius:4px}
+.rrow{
+  display:grid; grid-template-columns:20px 44px 1fr 62px; gap:8px; align-items:center;
+  padding:5px 7px; border-radius:8px; cursor:pointer; border:1px solid transparent;
+}
+.rrow:hover{background:rgba(53,224,208,.07); border-color:rgba(53,224,208,.22)}
+.rrow[aria-selected="true"]{background:rgba(53,224,208,.14); border-color:var(--edge-hot)}
+.rrow .pos{font-family:var(--mono); font-size:9.5px; color:var(--faint); text-align:right}
+.rrow .iso{font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.04em}
+.rrow .val{font-family:var(--mono); font-size:11px; text-align:right; font-variant-numeric:tabular-nums}
+.rrow.cs .iso{color:var(--amber)}
+.bar{position:relative; height:13px}
+
+/* ---------- detail header ---------- */
+.dhead{display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; justify-content:space-between; margin-bottom:14px}
+.dhead h3{margin:0; font-size:21px; font-weight:650; letter-spacing:-.01em}
+.dhead .iso3{font-family:var(--mono); font-size:11px; color:var(--cyan); letter-spacing:.14em}
+.chips{display:flex; gap:6px; flex-wrap:wrap}
+.chip{font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+      padding:3px 8px; border-radius:20px; border:1px solid var(--edge); color:var(--muted)}
+.chip.hot{color:var(--amber); border-color:rgba(255,179,71,.42); background:rgba(255,179,71,.09)}
+.chip.cs{color:var(--cyan); border-color:var(--edge-hot); background:rgba(53,224,208,.1)}
+
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:9px; margin-bottom:15px}
+.tile{padding:9px 11px; border-radius:9px; background:rgba(6,11,20,.72); border:1px solid var(--edge)}
+.tile b{display:block; font-family:var(--mono); font-size:15px; font-weight:600}
+.tile span{display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); margin-top:2px}
+
+.charts{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px}
+@media (max-width:900px){ .charts{grid-template-columns:1fr} }
+.chart{background:rgba(5,9,17,.6); border:1px solid var(--edge); border-radius:11px; padding:11px 12px 6px}
+.chart h4{margin:0 0 1px; font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:#b9cde2; font-weight:600}
+.chart .hint{margin:0 0 6px; font-size:10px; color:var(--faint)}
+svg{display:block; width:100%; height:auto; overflow:visible}
+
+.legend{display:flex; gap:13px; flex-wrap:wrap; margin-top:4px}
+.lg{display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px; color:var(--muted)}
+.sw{width:13px; height:2.5px; border-radius:2px}
+
+.note{
+  margin-top:14px; padding:10px 13px; border-radius:10px; font-size:11.5px; line-height:1.55;
+  background:rgba(255,179,71,.07); border:1px solid rgba(255,179,71,.26); color:#e7d4b4;
+}
+.note b{color:var(--amber)}
+
+#tip{
+  position:fixed; z-index:50; pointer-events:none; opacity:0; transition:opacity .1s;
+  background:rgba(6,11,21,.97); border:1px solid var(--edge-hot); border-radius:8px;
+  padding:7px 10px; font-family:var(--mono); font-size:10.5px; color:var(--ink);
+  box-shadow:0 8px 26px rgba(0,0,0,.6); white-space:pre; line-height:1.55;
+}
+footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--mono); text-align:center; line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <svg class="dish" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <circle cx="20" cy="20" r="18" stroke="rgba(53,224,208,.35)" stroke-width="1"/>
+      <circle cx="20" cy="20" r="12" stroke="rgba(53,224,208,.22)" stroke-width="1"/>
+      <circle cx="20" cy="20" r="6" stroke="rgba(53,224,208,.5)" stroke-width="1"/>
+      <path d="M20 2v36M2 20h36" stroke="rgba(53,224,208,.16)" stroke-width="1"/>
+      <circle cx="27.5" cy="12.5" r="2.6" fill="#35e0d0"/>
+    </svg>
+    <div>
+      <h1>SSA DIVERGENCE MONITOR</h1>
+      <p>Reported GDP growth vs satellite night-lights growth</p>
+    </div>
+  </div>
+  <div class="readouts">
+    <div class="ro"><b class="num">{{ meta.n_obs }}</b><span>Obs</span></div>
+    <div class="ro"><b class="num">{{ meta.n_countries }}</b><span>Countries</span></div>
+    <div class="ro"><b class="num">{{ meta.year_min }}–{{ meta.year_max }}</b><span>Window</span></div>
+    <div class="ro"><b class="num" style="color:var(--cyan)">{{ "%.0f"|format(meta.share_negative*100) }}%</b><span>Lights &gt; GDP</span></div>
+    {% if results.beta %}<div class="ro"><b class="num" style="color:var(--violet)">{{ "%.3f"|format(results.beta.estimate) }}</b><span>β̂ vs 1.0</span></div>{% endif %}
+    <div class="ro"><b class="num" style="font-size:12px;padding-top:3px"><span class="live"></span>LIVE</b><span>From outputs/</span></div>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- ====== ranking ====== -->
+  <section class="card">
+    <h2>Divergence Index</h2>
+    <p class="sub">All {{ meta.n_countries }} countries ranked. Bars run from zero: <span style="color:var(--cyan)">cyan = lights outgrew GDP</span>, <span style="color:var(--amber)">amber = GDP outgrew lights</span>. Click a row to load it.</p>
+    <div class="tabs" id="sorts" role="tablist"></div>
+    <div class="rank" id="rank" role="listbox" aria-label="Countries ranked by divergence"></div>
+  </section>
+
+  <!-- ====== country detail ====== -->
+  <section class="card">
+    <div class="dhead">
+      <div>
+        <div class="iso3" id="d-iso">—</div>
+        <h3 id="d-name">—</h3>
+      </div>
+      <div class="chips" id="d-chips"></div>
+    </div>
+
+    <div class="tiles" id="d-tiles"></div>
+
+    <div class="charts">
+      <div class="chart">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div>
+            <h4>Growth trace</h4>
+            <p class="hint">Log change, year on year. The vertical distance between the two lines <em>is</em> the gap.</p>
+          </div>
+          <div class="tabs" id="gscale" style="margin:0;flex:none"></div>
+        </div>
+        <div id="c-growth"></div>
+        <div class="legend">
+          <div class="lg"><span class="sw" style="background:var(--cyan)"></span>Δln GDP</div>
+          <div class="lg"><span class="sw" style="background:var(--violet)"></span>Δln lights</div>
+          <div class="lg"><span class="sw" style="background:var(--rose);opacity:.65"></span>Δln lights (bright cells)</div>
+        </div>
+      </div>
+      <div class="chart">
+        <h4>Gap vs model prediction</h4>
+        <p class="hint">Bars are the actual gap; the dashed line is the fixed-effects prediction. The distance between them is the residual.</p>
+        <div id="c-gap"></div>
+        <div class="legend">
+          <div class="lg"><span class="sw" style="background:var(--cyan)"></span>Gap &lt; 0</div>
+          <div class="lg"><span class="sw" style="background:var(--amber)"></span>Gap &gt; 0</div>
+          <div class="lg"><span class="sw" style="background:#9fb3c8"></span>Prediction</div>
+          <div class="lg"><span class="sw" style="background:var(--amber);height:9px;width:3px"></span>Rebasing year</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="row2">
+  <!-- ====== panel-wide by year ====== -->
+  <section class="card">
+    <h2>Panel distribution by year</h2>
+    <p class="sub">Interquartile band, median line and full range of the gap across all {{ meta.n_countries }} countries. The selected country is overlaid.</p>
+    <div id="c-years"></div>
+    <div class="legend">
+      <div class="lg"><span class="sw" style="background:rgba(53,224,208,.3);height:9px"></span>IQR</div>
+      <div class="lg"><span class="sw" style="background:var(--cyan)"></span>Median</div>
+      <div class="lg"><span class="sw" style="background:#fff"></span>Selected country</div>
+    </div>
+    <p class="hint" style="font-size:10.5px;color:var(--faint);margin-top:8px">
+      2017 sits low for a reason: a VIIRS detection change inflated lights growth that year, and it hit dim countries hardest.
+    </p>
+  </section>
+
+  <!-- ====== cross-section ====== -->
+  <section class="card">
+    <h2>Cross-section</h2>
+    <p class="sub">Each dot is a country's six-year mean. This is the between-country picture; the models use within-country variation, so a pattern here need not survive fixed effects.</p>
+    <div class="tabs" id="xaxis" role="tablist"></div>
+    <div id="c-scatter"></div>
+  </section>
+</div>
+
+{% if results.capacity and results.accountability %}
+<div class="note">
+  <b>Read this before ranking anyone.</b> A large divergence is not evidence of misreporting. Night lights miss agriculture, the informal economy and off-grid activity, and they pick up gas flaring and electrification. In the fixed-effects models neither statistical capacity
+  (<span class="num">{{ "%+.5f"|format(results.capacity.coefficient) }}</span>, p = <span class="num">{{ "%.3f"|format(results.capacity.p_value) }}</span>)
+  nor accountability
+  (<span class="num">{{ "%+.4f"|format(results.accountability.coefficient) }}</span>, p = <span class="num">{{ "%.3f"|format(results.accountability.p_value) }}</span>)
+  explains the gap. {% if results.beta %}And the check model rejects the gap's own premise: β̂ = <span class="num">{{ "%.3f"|format(results.beta.estimate) }}</span> against H₀ β = 1, t = <span class="num">{{ "%.1f"|format(results.beta.t_stat) }}</span>, so GDP and lights do not move one-for-one.{% endif %}
+  This dashboard is for choosing where to look, not for drawing conclusions.
+</div>
+{% endif %}
+
+<footer>
+  Built by <span style="color:var(--muted)">python -m src.dashboard</span> from outputs/ — every figure read from the committed tables, nothing recomputed in the browser.<br>
+  Balanced panel, {{ meta.n_countries }} countries × {{ meta.year_max - meta.year_min + 1 }} years = {{ meta.n_obs }} observations. Gap = Δln GDP − Δln lights.
+</footer>
+</div>
+
+<div id="tip"></div>
+
+<script type="application/json" id="payload">{{ payload_json|safe }}</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("payload").textContent);
+const NS = "http://www.w3.org/2000/svg";
+const C = {cyan:"#35e0d0", violet:"#9d7bff", amber:"#ffb347", rose:"#ff4f8b",
+           grid:"rgba(120,160,200,.13)", axis:"rgba(140,175,210,.35)", faint:"#55657d"};
+
+/* ---------- tiny SVG helpers ---------- */
+function el(tag, attrs){
+  const node = document.createElementNS(NS, tag);
+  for(const k in attrs){ if(attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]); }
+  return node;
+}
+function svg(host, w, h){
+  host.innerHTML = "";
+  const s = el("svg", {viewBox:`0 0 ${w} ${h}`, preserveAspectRatio:"xMidYMid meet"});
+  host.appendChild(s);
+  return s;
+}
+function fmt(v, d){ return (v>=0?"+":"") + v.toFixed(d===undefined?3:d); }
+
+const tip = document.getElementById("tip");
+function showTip(evt, text){
+  tip.textContent = text;
+  tip.style.opacity = 1;
+  const pad = 14;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const box = tip.getBoundingClientRect();
+  if(x + box.width > innerWidth - 8) x = evt.clientX - box.width - pad;
+  if(y + box.height > innerHeight - 8) y = evt.clientY - box.height - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip(){ tip.style.opacity = 0; }
+function hoverable(node, text){
+  node.addEventListener("mousemove", e => showTip(e, text));
+  node.addEventListener("mouseleave", hideTip);
+}
+
+/* y axis with a zero line, shared by the detail charts */
+function yAxis(s, pad, w, h, lo, hi, ticks){
+  const y = v => pad.t + (hi - v)/(hi - lo) * (h - pad.t - pad.b);
+  for(let i=0;i<=ticks;i++){
+    const v = lo + (hi-lo)*i/ticks;
+    const yy = y(v);
+    const zero = Math.abs(v) < 1e-9;
+    s.appendChild(el("line",{x1:pad.l, x2:w-pad.r, y1:yy, y2:yy,
+      stroke: zero?C.axis:C.grid, "stroke-width": zero?1:1,
+      "stroke-dasharray": zero?"":"3 5"}));
+    const t = el("text",{x:pad.l-7, y:yy+3.5, "text-anchor":"end",
+      fill:C.faint, "font-size":9, "font-family":"ui-monospace,monospace"});
+    t.textContent = v.toFixed(2);
+    s.appendChild(t);
+  }
+  return y;
+}
+function xLabels(s, pad, w, h, years){
+  const step = (w - pad.l - pad.r) / years.length;
+  years.forEach((yr,i)=>{
+    const t = el("text",{x:pad.l + step*(i+0.5), y:h-pad.b+15, "text-anchor":"middle",
+      fill:C.faint, "font-size":9.5, "font-family":"ui-monospace,monospace"});
+    t.textContent = yr;
+    s.appendChild(t);
+  });
+  return i => pad.l + step*(i+0.5);
+}
+
+/* ---------- state ---------- */
+let selected = DATA.meta.case_studies[0] || DATA.countries[0].iso3c;
+let sortKey = "mean_gap";
+let xKey = "spi_rebuilt";
+let growthScale = "shared";
+
+const SORTS = [
+  {key:"mean_gap",     label:"Mean gap",    desc:"signed",     fmt:v=>fmt(v,3)},
+  {key:"mean_abs_gap", label:"Mean |gap|",  desc:"size",       fmt:v=>v.toFixed(3)},
+  {key:"volatility",   label:"Volatility",  desc:"sd of gap",  fmt:v=>v.toFixed(3)},
+  {key:"worst_gap",    label:"Worst year",  desc:"largest",    fmt:v=>fmt(v,3)}
+];
+const XAXES = [
+  {key:"spi_rebuilt",     label:"Capacity (SPI rebuilt)"},
+  {key:"accountability",  label:"Accountability (V-Dem)"},
+  {key:"elec_change_total", label:"Electrification, pp gained"},
+  {key:"agri_share",      label:"Agriculture, % of GDP"}
+];
+
+const byIso = Object.fromEntries(DATA.countries.map(c=>[c.iso3c,c]));
+
+/* ---------- ranking list ---------- */
+function drawSorts(){
+  const host = document.getElementById("sorts");
+  host.innerHTML = "";
+  SORTS.forEach(s=>{
+    const b = document.createElement("button");
+    b.className = "tab"; b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", s.key === sortKey);
+    b.textContent = s.label;
+    b.onclick = ()=>{ sortKey = s.key; drawSorts(); drawRank(); };
+    host.appendChild(b);
+  });
+}
+
+function drawRank(){
+  const host = document.getElementById("rank");
+  host.innerHTML = "";
+  const spec = SORTS.find(s=>s.key===sortKey);
+  // Signed measures sort ascending (most negative first, which is the
+  // under-reporting direction); size measures sort descending.
+  const signed = sortKey === "mean_gap" || sortKey === "worst_gap";
+  const rows = [...DATA.countries].sort((a,b)=>
+      signed ? a[sortKey]-b[sortKey] : b[sortKey]-a[sortKey]);
+  const extent = Math.max(...rows.map(r=>Math.abs(r[sortKey]))) || 1;
+
+  rows.forEach((c,i)=>{
+    const row = document.createElement("div");
+    row.className = "rrow" + (c.is_case_study ? " cs" : "");
+    row.setAttribute("role","option");
+    row.setAttribute("aria-selected", c.iso3c === selected);
+    row.onclick = ()=>{ selected = c.iso3c; drawRank(); drawDetail(); drawYears(); drawScatter(); };
+
+    const pos = document.createElement("div");
+    pos.className = "pos"; pos.textContent = String(i+1).padStart(2,"0");
+    const iso = document.createElement("div");
+    iso.className = "iso"; iso.textContent = c.iso3c;
+
+    const barHost = document.createElement("div");
+    barHost.className = "bar";
+    const W = 190, H = 13, mid = signed ? W/2 : 2;
+    const s = svg(barHost, W, H);
+    s.appendChild(el("line",{x1:mid,x2:mid,y1:0,y2:H,stroke:"rgba(140,175,210,.30)","stroke-width":1}));
+    const v = c[sortKey];
+    const len = Math.abs(v)/extent * (signed ? W/2 - 3 : W - 5);
+    const neg = v < 0;
+    s.appendChild(el("rect",{
+      x: signed ? (neg ? mid-len : mid) : mid, y:3, width:Math.max(len,1), height:H-6, rx:2,
+      fill: neg ? C.cyan : C.amber, opacity: c.iso3c===selected ? 1 : .62}));
+    barHost.appendChild(s);
+
+    const val = document.createElement("div");
+    val.className = "val"; val.textContent = spec.fmt(v);
+    val.style.color = (signed && v<0) ? C.cyan : (signed ? C.amber : "#b9cde2");
+
+    row.append(pos, iso, barHost, val);
+    hoverable(row, `${c.name} (${c.iso3c})\nmean gap    ${fmt(c.mean_gap)}\nmean |gap|  ${c.mean_abs_gap.toFixed(3)}\nvolatility  ${c.volatility.toFixed(3)}\nworst       ${fmt(c.worst_gap)} in ${c.worst_year}`);
+    host.appendChild(row);
+  });
+}
+
+/* ---------- country detail ---------- */
+function drawDetail(){
+  const c = byIso[selected];
+  document.getElementById("d-iso").textContent = c.iso3c;
+  document.getElementById("d-name").textContent = c.name;
+
+  const chips = document.getElementById("d-chips");
+  chips.innerHTML = "";
+  const add = (text, cls)=>{ const d=document.createElement("span"); d.className="chip "+(cls||""); d.textContent=text; chips.appendChild(d); };
+  if(c.is_case_study) add("Case study","cs");
+  if(c.is_oil_producer) add("Oil producer","hot");
+  if(c.rebasing_years.length) add("Rebased "+c.rebasing_years.join(", "),"hot");
+  add((c.mean_gap<0?"Lights outgrew GDP":"GDP outgrew lights"));
+
+  const tiles = [
+    ["Mean gap", fmt(c.mean_gap), c.mean_gap<0?C.cyan:C.amber],
+    ["Mean |gap|", c.mean_abs_gap.toFixed(3), null],
+    ["Volatility", c.volatility.toFixed(3), null],
+    ["Δln GDP avg", fmt(c.mean_d_ln_gdp), null],
+    ["Δln lights avg", fmt(c.mean_d_ln_lights), null],
+    ["SPI rebuilt", c.spi_rebuilt.toFixed(1), null],
+    ["Accountability", c.accountability.toFixed(2), null],
+    ["Electrification", (c.elec_access_start.toFixed(0)+"→"+c.elec_access_end.toFixed(0)+"%"), null]
+  ];
+  const host = document.getElementById("d-tiles");
+  host.innerHTML = "";
+  tiles.forEach(([lab,val,col])=>{
+    const d = document.createElement("div"); d.className="tile";
+    const b = document.createElement("b"); b.textContent = val; if(col) b.style.color = col;
+    const s = document.createElement("span"); s.textContent = lab;
+    d.append(b,s); host.appendChild(d);
+  });
+
+  drawGrowth(c);
+  drawGap(c);
+}
+
+function drawGrowth(c){
+  const W=430, H=215, pad={l:40,r:10,t:10,b:26};
+  const s = svg(document.getElementById("c-growth"), W, H);
+
+  // Shared scale by default so two countries can be compared by eye. One
+  // country with a very large swing otherwise squashes everyone else flat,
+  // which is why "fit" exists - but it makes countries NON-comparable, so
+  // it is opt-in rather than the default.
+  let lo, hi;
+  if(growthScale === "fit"){
+    const vals = c.series.flatMap(p=>[p.d_ln_gdp, p.d_ln_lights, p.d_ln_lights_bright]);
+    lo = Math.min(...vals, 0); hi = Math.max(...vals, 0);
+    const padV = (hi-lo)*0.12 || 0.05;
+    lo -= padV; hi += padV;
+  } else {
+    lo = Math.min(DATA.scales.growth_min, 0); hi = DATA.scales.growth_max;
+  }
+  const y = yAxis(s, pad, W, H, lo, hi, 5);
+  const x = xLabels(s, pad, W, H, c.series.map(p=>p.year));
+
+  const line = (key, colour, dash, width)=>{
+    const pts = c.series.map((p,i)=>`${x(i)},${y(p[key])}`).join(" ");
+    s.appendChild(el("polyline",{points:pts, fill:"none", stroke:colour,
+      "stroke-width":width||2, "stroke-dasharray":dash||"",
+      "stroke-linejoin":"round","stroke-linecap":"round",
+      opacity: dash?0.55:1}));
+  };
+  line("d_ln_lights_bright", C.rose, "4 4", 1.5);
+  line("d_ln_lights", C.violet);
+  line("d_ln_gdp", C.cyan);
+
+  c.series.forEach((p,i)=>{
+    // the gap itself, drawn as the vertical distance it is
+    s.appendChild(el("line",{x1:x(i),x2:x(i), y1:y(p.d_ln_gdp), y2:y(p.d_ln_lights),
+      stroke:"rgba(255,255,255,.16)","stroke-width":5,"stroke-linecap":"round"}));
+    [["d_ln_lights",C.violet],["d_ln_gdp",C.cyan]].forEach(([k,col])=>{
+      const dot = el("circle",{cx:x(i), cy:y(p[k]), r:3.4, fill:"#070c16", stroke:col, "stroke-width":1.8});
+      hoverable(dot, `${c.iso3c} ${p.year}\nΔln GDP     ${fmt(p.d_ln_gdp)}\nΔln lights  ${fmt(p.d_ln_lights)}\nbright      ${fmt(p.d_ln_lights_bright)}\ngap         ${fmt(p.gap)}`);
+      s.appendChild(dot);
+    });
+  });
+}
+
+function drawGap(c){
+  const W=430, H=215, pad={l:40,r:10,t:10,b:26};
+  const s = svg(document.getElementById("c-gap"), W, H);
+  const lo = DATA.scales.gap_min, hi = DATA.scales.gap_max;
+  const y = yAxis(s, pad, W, H, lo, hi, 5);
+  const x = xLabels(s, pad, W, H, c.series.map(p=>p.year));
+  const bw = (W - pad.l - pad.r) / c.series.length * 0.44;
+  const zero = y(0);
+
+  c.series.forEach((p,i)=>{
+    if(p.rebased){
+      // A marker, not a spotlight: the bar beside it is the data.
+      s.appendChild(el("rect",{x:x(i)-bw*0.95, y:pad.t, width:bw*1.9, height:H-pad.t-pad.b,
+        fill:"rgba(255,179,71,.055)", stroke:"rgba(255,179,71,.22)",
+        "stroke-dasharray":"2 4"}));
+      const flag = el("text",{x:x(i), y:pad.t+9, "text-anchor":"middle",
+        fill:"rgba(255,179,71,.8)", "font-size":8,
+        "font-family":"ui-monospace,monospace", "letter-spacing":"0.1em"});
+      flag.textContent = "REBASE";
+      s.appendChild(flag);
+    }
+    const yv = y(p.gap);
+    const r = el("rect",{x:x(i)-bw/2, y:Math.min(yv,zero), width:bw,
+      height:Math.max(Math.abs(yv-zero),1), rx:2,
+      fill: p.gap<0?C.cyan:C.amber, opacity:.82});
+    hoverable(r, `${c.iso3c} ${p.year}\ngap         ${fmt(p.gap)}\npredicted   ${fmt(p.prediction)}\nresidual    ${fmt(p.residual)}\nstringency  ${p.stringency.toFixed(1)}${p.rebased?"\nREBASING YEAR":""}`);
+    s.appendChild(r);
+  });
+
+  const pts = c.series.map((p,i)=>`${x(i)},${y(p.prediction)}`).join(" ");
+  s.appendChild(el("polyline",{points:pts, fill:"none", stroke:"#9fb3c8",
+    "stroke-width":1.6, "stroke-dasharray":"5 4", "stroke-linejoin":"round"}));
+  c.series.forEach((p,i)=>{
+    s.appendChild(el("circle",{cx:x(i), cy:y(p.prediction), r:2.6, fill:"#9fb3c8"}));
+  });
+}
+
+/* ---------- panel-wide by year ---------- */
+function drawYears(){
+  const host = document.getElementById("c-years");
+  const W=700, H=250, pad={l:44,r:12,t:12,b:28};
+  const s = svg(host, W, H);
+  const lo = DATA.scales.gap_min, hi = DATA.scales.gap_max;
+  const y = yAxis(s, pad, W, H, lo, hi, 6);
+  const x = xLabels(s, pad, W, H, DATA.years.map(d=>d.year));
+  const bw = (W - pad.l - pad.r) / DATA.years.length * 0.4;
+
+  DATA.years.forEach((d,i)=>{
+    s.appendChild(el("line",{x1:x(i),x2:x(i),y1:y(d.min),y2:y(d.max),
+      stroke:"rgba(53,224,208,.25)","stroke-width":1}));
+    const box = el("rect",{x:x(i)-bw/2, y:y(d.q3), width:bw,
+      height:Math.max(y(d.q1)-y(d.q3),1), rx:3,
+      fill:"rgba(53,224,208,.20)", stroke:"rgba(53,224,208,.45)"});
+    hoverable(box, `${d.year}\nmedian  ${fmt(d.median)}\nIQR     ${fmt(d.q1)} to ${fmt(d.q3)}\nrange   ${fmt(d.min)} to ${fmt(d.max)}\n${(d.share_negative*100).toFixed(0)}% of countries negative`);
+    s.appendChild(box);
+    s.appendChild(el("line",{x1:x(i)-bw/2, x2:x(i)+bw/2, y1:y(d.median), y2:y(d.median),
+      stroke:C.cyan,"stroke-width":2.2}));
+  });
+
+  const c = byIso[selected];
+  const pts = c.series.map((p,i)=>`${x(i)},${y(p.gap)}`).join(" ");
+  s.appendChild(el("polyline",{points:pts, fill:"none", stroke:"#fff",
+    "stroke-width":1.8, "stroke-linejoin":"round", opacity:.9}));
+  c.series.forEach((p,i)=>{
+    const dot = el("circle",{cx:x(i), cy:y(p.gap), r:3.2, fill:"#fff"});
+    hoverable(dot, `${c.iso3c} ${p.year}\ngap ${fmt(p.gap)}`);
+    s.appendChild(dot);
+  });
+}
+
+/* ---------- cross-section scatter ---------- */
+function drawXaxes(){
+  const host = document.getElementById("xaxis");
+  host.innerHTML = "";
+  XAXES.forEach(a=>{
+    const b = document.createElement("button");
+    b.className="tab"; b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", a.key===xKey);
+    b.textContent = a.label;
+    b.onclick = ()=>{ xKey = a.key; drawXaxes(); drawScatter(); };
+    host.appendChild(b);
+  });
+}
+
+function drawScatter(){
+  const host = document.getElementById("c-scatter");
+  const W=700, H=250, pad={l:44,r:14,t:12,b:34};
+  const s = svg(host, W, H);
+  const xs = DATA.countries.map(c=>c[xKey]);
+  const xlo = Math.min(...xs), xhi = Math.max(...xs);
+  const ys = DATA.countries.map(c=>c.mean_gap);
+  const ylo = Math.min(...ys), yhi = Math.max(...ys);
+  const padY = (yhi-ylo)*0.12, padX = (xhi-xlo)*0.06;
+  const y = yAxis(s, pad, W, H, ylo-padY, yhi+padY, 5);
+  const X = v => pad.l + (v-(xlo-padX))/((xhi+padX)-(xlo-padX)) * (W-pad.l-pad.r);
+
+  for(let i=0;i<=4;i++){
+    const v = (xlo-padX) + ((xhi+padX)-(xlo-padX))*i/4;
+    s.appendChild(el("line",{x1:X(v),x2:X(v),y1:pad.t,y2:H-pad.b,stroke:C.grid,"stroke-dasharray":"3 5"}));
+    const t = el("text",{x:X(v), y:H-pad.b+15, "text-anchor":"middle", fill:C.faint,
+      "font-size":9.5, "font-family":"ui-monospace,monospace"});
+    t.textContent = Math.abs(v)>=100 ? v.toFixed(0) : v.toFixed(Math.abs(v)<3?2:1);
+    s.appendChild(t);
+  }
+  const lab = el("text",{x:(pad.l+W-pad.r)/2, y:H-2, "text-anchor":"middle", fill:C.faint,
+    "font-size":9.5, "font-family":"ui-monospace,monospace", "letter-spacing":"0.12em"});
+  lab.textContent = XAXES.find(a=>a.key===xKey).label.toUpperCase();
+  s.appendChild(lab);
+
+  const ylab = el("text",{x:11, y:(pad.t+H-pad.b)/2, fill:C.faint, "text-anchor":"middle",
+    "font-size":9.5, "font-family":"ui-monospace,monospace", "letter-spacing":"0.12em",
+    transform:`rotate(-90 11 ${(pad.t+H-pad.b)/2})`});
+  ylab.textContent = "MEAN GAP";
+  s.appendChild(ylab);
+
+  DATA.countries.forEach(c=>{
+    const on = c.iso3c===selected;
+    const dot = el("circle",{cx:X(c[xKey]), cy:y(c.mean_gap), r:on?7:4.2,
+      fill: on ? "#fff" : (c.mean_gap<0?"rgba(53,224,208,.62)":"rgba(255,179,71,.62)"),
+      stroke: on ? C.cyan : "transparent", "stroke-width":2});
+    dot.style.cursor="pointer";
+    dot.onclick = ()=>{ selected=c.iso3c; drawRank(); drawDetail(); drawYears(); drawScatter(); };
+    hoverable(dot, `${c.name} (${c.iso3c})\n${XAXES.find(a=>a.key===xKey).label}: ${c[xKey].toFixed(2)}\nmean gap: ${fmt(c.mean_gap)}`);
+    s.appendChild(dot);
+    if(on || c.is_case_study){
+      const t = el("text",{x:X(c[xKey])+9, y:y(c.mean_gap)+3.5, fill: on?"#fff":C.amber,
+        "font-size":9.5, "font-family":"ui-monospace,monospace"});
+      t.textContent = c.iso3c;
+      s.appendChild(t);
+    }
+  });
+}
+
+function drawGrowthScaleTabs(){
+  const host = document.getElementById("gscale");
+  host.innerHTML = "";
+  [["shared","Shared"],["fit","Fit"]].forEach(([key,label])=>{
+    const b = document.createElement("button");
+    b.className="tab"; b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", key===growthScale);
+    b.textContent = label;
+    b.title = key==="shared"
+      ? "Same y-axis for every country, so countries are comparable"
+      : "Axis fitted to this country: easier to read, NOT comparable across countries";
+    b.onclick = ()=>{ growthScale = key; drawGrowthScaleTabs(); drawGrowth(byIso[selected]); };
+    host.appendChild(b);
+  });
+}
+
+/* ---------- go ---------- */
+drawSorts(); drawRank(); drawGrowthScaleTabs(); drawDetail();
+drawYears(); drawXaxes(); drawScatter();
+addEventListener("resize", ()=>{ drawDetail(); drawYears(); drawScatter(); });
+</script>
+</body>
+</html>

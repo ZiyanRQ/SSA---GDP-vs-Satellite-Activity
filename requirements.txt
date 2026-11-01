@@ -38,5 +38,11 @@ pyproj
 # --- figures ---
 matplotlib
 
+# --- dashboard ---
+# src/dashboard.py renders one self-contained HTML file from a template.
+# Jinja2 arrives with jupyterlab anyway, but the dashboard depends on it
+# directly, so it is declared rather than relied on as a side effect.
+Jinja2
+
 # --- exploration ---
 jupyterlab
