@@ -1,0 +1,72 @@
+# Publishes the dashboard to GitHub Pages on every push to main.
+#
+# WHY A WORKFLOW RATHER THAN A COMMITTED index.html
+#   Pages can serve a folder straight from the branch, which would mean
+#   keeping a second copy of outputs/dashboard.html at docs/index.html. That
+#   file is ~600 KB and is rebuilt whenever the models are re-run, so every
+#   rebuild would commit another 600 KB that Git keeps forever. Five versions
+#   already account for 2 MB of history with ONE copy.
+#
+#   This takes the file that is already committed and stages it as the site
+#   at deploy time, so nothing is duplicated in the repository.
+#
+# ONE-TIME SETUP
+#   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
+#   Nothing else. No branch to pick, no folder to pick.
+#
+# The site lands at https://ziyanrq.github.io/SSA---GDP-vs-Satellite-Activity/
+
+name: Deploy dashboard to Pages
+
+on:
+  push:
+    branches: [main]
+    # Only redeploy when the dashboard itself changes. Editing the README or
+    # the Python modules does not need a Pages deployment.
+    paths:
+      - "outputs/dashboard.html"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch: # also lets you deploy by hand from the Actions tab
+
+# The permissions the deploy action needs, and no more.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# If two pushes land close together, let the newer one win rather than
+# queueing a deployment that is already out of date.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Stage the dashboard as the site root
+        run: |
+          mkdir -p _site
+          test -f outputs/dashboard.html \
+            || { echo "outputs/dashboard.html is missing"; exit 1; }
+          cp outputs/dashboard.html _site/index.html
+          # Tells Pages to serve the files as they are instead of running
+          # them through Jekyll, which would otherwise ignore anything
+          # starting with an underscore.
+          touch _site/.nojekyll
+          echo "staged $(du -h _site/index.html | cut -f1)"
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

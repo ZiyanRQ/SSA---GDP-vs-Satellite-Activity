@@ -15,12 +15,12 @@ step checked against the data rather than assumed.
 [![VIIRS](https://img.shields.io/badge/Data-VIIRS%20night%20lights-1f6feb)](https://eogdata.mines.edu/products/vnl/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-### [▶ Download the interactive dashboard](outputs/dashboard.html)
+### [▶ Open the live dashboard](https://ziyanrq.github.io/SSA---GDP-vs-Satellite-Activity/)
 
-<sub>One self-contained HTML file, 600 KB — open it straight from disk. No
-server, no install, no internet, and ten processed datasets travel inside it.
-<br>(GitHub shows the source for <code>.html</code>; use the download button,
-or run <code>python -m src.dashboard --open</code>.)</sub>
+<sub>One self-contained HTML file, 600 KB — no server, no install, no internet,
+and ten processed datasets travel inside it.
+<br>Also runs straight from disk: <a href="outputs/dashboard.html">download it</a>
+or build your own with <code>python -m src.dashboard --open</code>.</sub>
 
 </div>
 
