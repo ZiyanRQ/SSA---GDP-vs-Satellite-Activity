@@ -594,7 +594,7 @@ Country and year fixed effects, standard errors clustered by country,
 
 | Outcome | Coefficient | Estimate | SE | p |
 | --- | --- | --- | --- | --- |
-| abs_gap | spi_rebuilt (capacity) | −0.00003 | 0.0018 | 0.995 |
+| abs_gap | spi_rebuilt (capacity) | −0.0000109 | 0.0018 | 0.995 |
 | gap | v2x_accountability | −0.0048 | 0.0332 | 0.886 |
 
 Both are **indistinguishable from zero**, and both survive every robustness
@@ -706,6 +706,26 @@ Re-run `models.py` and the dashboard changes with it.
 
 The charts are hand-written SVG rather than a plotting library: it keeps the
 project to its existing dependencies and gives exact control over the layout.
+
+It also carries three reference sections:
+
+- **A Sub-Saharan Africa locator**, generated from the *same* Natural Earth
+  file the night lights were summed inside — so the shape on screen is the
+  shape the data was measured in, not a decorative outline from elsewhere.
+  All 48 countries are drawn; the 10 outside the balanced panel are dimmed
+  rather than hidden, and the selected country is lit. Clicking a country
+  selects it.
+- **The models, symbol by symbol.** All three equations — the gap definition,
+  the main specification and the check model — with every symbol explained in
+  three parts: what it is, what it means in this data, and *where it shows up
+  on the charts*. The estimated values of θ, φ and β are read from the
+  results tables, so they cannot go stale.
+- **The processed datasets**, all ten of them, each with its row × column
+  shape, the module that built it, its full column list and a **Download CSV**
+  button. The CSVs are embedded in the page, so the dashboard is a portable
+  copy of the processed data: one file that can be sent to a supervisor who
+  can then read the numbers behind any chart without the repository.
+  `--no-embed` drops them (586 KB → 205 KB).
 
 > The page carries the same warning this README does: **a large divergence is
 > not evidence of misreporting.** Lights miss agriculture, the informal economy

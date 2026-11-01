@@ -234,6 +234,74 @@ def build_year_summary(panel: pd.DataFrame) -> list[dict]:
     return summary
 
 
+# The map window, in degrees: west, south, east, north. Chosen rather than
+# taken from the data's own bounds, which run to -47 south (South Africa's
+# Prince Edward Islands) and 63.5 east (Mauritius's Rodrigues) and would put
+# most of the picture in empty ocean. Those two outliers are clipped; every
+# country still appears, which build_map() checks.
+MAP_WINDOW = (-26.0, -36.0, 58.0, 28.0)
+MAP_SCALE = 10          # SVG units per degree
+MAP_TOLERANCE = 0.08    # simplification, in degrees
+
+
+def build_map() -> dict:
+    """Turn the Natural Earth boundaries into SVG paths, one per country.
+
+    The same boundary file the night-lights step sums radiance inside, so the
+    shape on screen is the shape the data was measured in rather than a
+    decorative outline from somewhere else.
+
+    Plain equirectangular projection: at these latitudes it is close enough
+    to undistorted, and the map is a locator, not a measuring instrument.
+    """
+    from shapely.geometry import box
+
+    from src.process_lights import load_ssa_boundaries
+
+    boundaries = load_ssa_boundaries()
+    west, south, east, north = MAP_WINDOW
+    window = box(west, south, east, north)
+
+    paths = {}
+    for _, row in boundaries.iterrows():
+        geometry = row.geometry.intersection(window)
+        if geometry.is_empty:
+            continue
+        geometry = geometry.simplify(MAP_TOLERANCE, preserve_topology=True)
+        if geometry.is_empty:
+            continue
+
+        parts = (list(geometry.geoms) if geometry.geom_type == "MultiPolygon"
+                 else [geometry])
+        pieces = []
+        for polygon in parts:
+            xs, ys = polygon.exterior.coords.xy
+            points = [f"{(x - west) * MAP_SCALE:.0f},"
+                      f"{(north - y) * MAP_SCALE:.0f}"
+                      for x, y in zip(xs, ys)]
+            if len(points) > 2:
+                pieces.append("M" + "L".join(points) + "Z")
+        if pieces:
+            paths[row["iso3c"]] = "".join(pieces)
+
+    missing = sorted(set(config.SSA_ALL) - set(paths))
+    if missing:
+        raise ValueError(
+            f"no map path for {missing}. The display window {MAP_WINDOW} "
+            "clips them out entirely, or the simplification tolerance "
+            f"({MAP_TOLERANCE}) removed them. Widen one or the other: a "
+            "country in the panel must be on the map."
+        )
+    print(f"  map: {len(paths)} country outlines, "
+          f"{sum(len(p) for p in paths.values()) / 1024:.0f} KB of path data")
+
+    return {
+        "width": int((east - west) * MAP_SCALE),
+        "height": int((north - south) * MAP_SCALE),
+        "paths": paths,
+    }
+
+
 def describe_file(path: Path) -> dict:
     """Report whether a raw file is actually here, and how big it is.
 
@@ -365,6 +433,196 @@ def build_sources() -> list[dict]:
     ]
 
 
+# The processed tables this project produces, in pipeline order. These are
+# OUTPUTS, not sources: each one is what a loader made from the raw files.
+PROCESSED = [
+    ("ssa_panel.csv", "processed", "build_panel.py",
+     "The estimation panel. Everything the models run on: 38 countries x 6 "
+     "years, with the gap, both lights measures, capacity, accountability, "
+     "the controls and the rebasing dummy."),
+    ("wdi_long.csv", "interim", "load_wdi.py",
+     "Seven World Bank indicators reshaped to one row per country-year. GDP "
+     "is kept in constant local currency, never converted: only its log "
+     "difference is used."),
+    ("lights_country_year.csv", "interim", "process_lights.py",
+     "Night-lights totals and growth rates per country-year, summed inside "
+     "national borders from the VIIRS rasters. Carries both the all-cells "
+     "and the bright-cells measure."),
+    ("lights_country_year_raw.csv", "interim", "process_lights.py",
+     "The same radiance totals as levels for 2015-2021, before differencing. "
+     "2015 exists only as the base year for 2016 growth."),
+    ("spi_published.csv", "interim", "load_spi.py",
+     "The World Bank's published SPI scores and all five pillars, subset to "
+     "Sub-Saharan Africa."),
+    ("spi_rebuilt.csv", "interim", "rebuild_spi.py",
+     "SPI rebuilt without the two indicators that describe the GDP series "
+     "itself, after reproducing the published index exactly. Carries the "
+     "published score alongside for comparison."),
+    ("rebasing_dummy.csv", "interim", "rebuild_spi.py",
+     "Base year per country-year and a 0/1 flag for the years it changed, "
+     "with a status column recording how each text base year was read."),
+    ("vdem_accountability.csv", "interim", "load_vdem.py",
+     "V-Dem accountability and its vertical, horizontal and diagonal "
+     "components: 7 columns pulled from a 4,618-column source file."),
+    ("oxcgrt_annual.csv", "interim", "load_oxcgrt.py",
+     "COVID policy stringency averaged from daily to annual, zero for "
+     "2016-2019 because there was no pandemic policy to measure."),
+    ("panel_fitted.csv", "tables", "models.py",
+     "The model's prediction and residual for every country-year, which is "
+     "what the gap-versus-prediction chart draws."),
+]
+
+
+def build_datasets(embed: bool = True) -> list[dict]:
+    """Describe (and optionally embed) every table the pipeline produced.
+
+    Embedding makes the dashboard a portable copy of the processed data:
+    one file that can be sent to a supervisor who can then read the numbers
+    behind any chart without the repository. It roughly triples the file
+    size, which is still small, and --no-embed turns it off.
+    """
+    folders = {"processed": config.DATA_PROCESSED,
+               "interim": config.DATA_INTERIM,
+               "tables": config.OUTPUTS_TABLES}
+
+    datasets = []
+    for filename, where, producer, description in PROCESSED:
+        path = folders[where] / filename
+        record = {"file": filename, "folder": where, "producer": producer,
+                  "description": description, "present": path.exists(),
+                  "rows": None, "columns": None, "size": "—", "csv": None}
+        if path.exists():
+            frame = pd.read_csv(path)
+            record["rows"] = int(len(frame))
+            record["columns"] = int(len(frame.columns))
+            record["column_names"] = list(frame.columns)
+            size = path.stat().st_size
+            record["size"] = (f"{size / 1_000_000:.1f} MB" if size >= 1_000_000
+                              else f"{size / 1000:.0f} KB")
+            if embed:
+                record["csv"] = path.read_text(encoding="utf-8")
+        datasets.append(record)
+
+    present = sum(1 for d in datasets if d["present"])
+    embedded = sum(1 for d in datasets if d["csv"])
+    total = sum(len(d["csv"]) for d in datasets if d["csv"])
+    print(f"  datasets: {present} of {len(datasets)} present, "
+          f"{embedded} embedded ({total / 1024:.0f} KB)")
+    return datasets
+
+
+def build_specification() -> dict:
+    """The equations the dashboard displays, with every symbol explained.
+
+    Kept here rather than written into the template so that the variable
+    names come from config: if the main capacity measure changes, the
+    equation on the page changes with it instead of quietly going stale.
+    """
+    return {
+        "gap": {
+            "latex": "gap<sub>it</sub> &nbsp;=&nbsp; Δln GDP<sub>it</sub> "
+                     "&nbsp;−&nbsp; Δln L<sub>it</sub>",
+            "words": "The outcome. How much faster reported GDP grew than "
+                     "night lights did, in country i in year t. Negative "
+                     "means lights grew faster.",
+            "chart": "Every bar in the gap chart, and the vertical distance "
+                     "between the two lines in the growth trace.",
+        },
+        "main": {
+            "latex": "gap<sub>it</sub> = α + <b>θ</b>·SPI<sub>it</sub> + "
+                     "<b>φ</b>·Acc<sub>it</sub> + "
+                     "π′X<sub>it</sub> + <b>μ<sub>i</sub></b> + "
+                     "<b>λ<sub>t</sub></b> + ε<sub>it</sub>",
+            "words": "The main specification, estimated with country and "
+                     "year fixed effects and standard errors clustered by "
+                     "country.",
+        },
+        "check": {
+            "latex": "Δln GDP<sub>it</sub> = α + <b>β</b>·Δln L<sub>it</sub> "
+                     "+ <b>γ</b>·(Δln L<sub>it</sub>×SPI<sub>it</sub>) + "
+                     "<b>δ</b>·(Δln L<sub>it</sub>×Acc<sub>it</sub>) + "
+                     "π′X<sub>it</sub> + μ<sub>i</sub> + λ<sub>t</sub> + "
+                     "ε<sub>it</sub>",
+            "words": "The check model. The gap above is this model with β "
+                     "forced to 1 and γ = δ = 0, so estimating β tests the "
+                     "gap's central assumption instead of assuming it.",
+        },
+        "symbols": [
+            {"sym": "i", "name": "country",
+             "means": f"One of the {len(config.EXPECTED_BALANCED_COUNTRIES)} "
+                      "countries in the balanced panel.",
+             "chart": "One row in the ranking, one dot in the scatter."},
+            {"sym": "t", "name": "year",
+             "means": f"{min(config.YEARS_GROWTH)} to "
+                      f"{max(config.YEARS_GROWTH)}, six years.",
+             "chart": "The x-axis of every time-series chart."},
+            {"sym": "Δln", "name": "log difference",
+             "means": "ln(value this year) − ln(value last year). A growth "
+                      "rate that is unit-free, so a country's own currency "
+                      "cancels out. 0.05 ≈ 5% growth.",
+             "chart": "Both lines in the growth trace."},
+            {"sym": "L", "name": "night lights",
+             "means": "Total VIIRS radiance summed inside the country's "
+                      "borders. The bright-cells version counts only cells "
+                      "above a fixed 5 nW/cm²/sr floor.",
+             "chart": "The violet line; the rose dashed line is the "
+                      "bright-cells version."},
+            {"sym": "θ", "name": "theta — capacity effect",
+             "means": "What the dissertation is testing. How much the gap "
+                      "moves with statistical capacity, within a country. "
+                      "Expected negative on the ABSOLUTE gap: better "
+                      "statistics, smaller disagreement either way.",
+             "chart": "The slope you would see in the scatter if capacity "
+                      "explained divergence. Estimated at "
+                      f"{read_headline_numbers().get('capacity', {}).get('coefficient', float('nan')):+.5f}, "
+                      "not distinguishable from zero."},
+            {"sym": "φ", "name": "phi — accountability effect",
+             "means": "How much the gap moves with political "
+                      "accountability. Expected negative on the SIGNED gap: "
+                      "weaker accountability, GDP grows faster than lights.",
+             "chart": "The scatter's accountability axis. Estimated at "
+                      f"{read_headline_numbers().get('accountability', {}).get('coefficient', float('nan')):+.4f}, "
+                      "not distinguishable from zero."},
+            {"sym": "β", "name": "beta — lights elasticity",
+             "means": "How much reported GDP moves when lights move 1%. The "
+                      "simple gap assumes this is exactly 1.",
+             "chart": "Not drawn directly. Estimated at "
+                      f"{read_headline_numbers().get('beta', {}).get('estimate', float('nan')):.3f}, "
+                      "and H₀: β = 1 is rejected — so the gap is a "
+                      "difference in growth rates, not an elasticity."},
+            {"sym": "γ, δ", "name": "gamma, delta — interactions",
+             "means": "Whether the lights-to-GDP relationship itself depends "
+                      "on capacity or accountability, rather than just "
+                      "shifting the gap up or down.",
+             "chart": "Not drawn. Both are small and insignificant."},
+            {"sym": "X", "name": "controls",
+             "means": "Agriculture share, change in electricity access, "
+                      "urban share, log population, COVID stringency. Things "
+                      "that move the gap for mechanical reasons.",
+             "chart": "The scatter's electrification and agriculture axes "
+                      "show two of them."},
+            {"sym": "μ<sub>i</sub>", "name": "country fixed effect",
+             "means": "One intercept per country. Absorbs each country's "
+                      "average gap and anything about it that does not "
+                      "change — geography, currency, how its statistics "
+                      "office works.",
+             "chart": "Why the prediction line sits near each country's own "
+                      "average rather than near zero."},
+            {"sym": "λ<sub>t</sub>", "name": "year fixed effect",
+             "means": "One intercept per year. Absorbs shocks common to all "
+                      "countries, such as the global part of COVID. It "
+                      "CANNOT absorb the 2017 detection change, because that "
+                      "hit dim countries harder than bright ones.",
+             "chart": "Why the year distribution chart matters: 2017 is low "
+                      "for a measurement reason, not an economic one."},
+            {"sym": "ε<sub>it</sub>", "name": "residual",
+             "means": "What the model does not explain for that country-year.",
+             "chart": "The vertical distance between a bar and the dashed "
+                      "prediction line."},
+        ],
+    }
+
+
 def build_payload(data: dict) -> dict:
     """Assemble everything the page needs into one JSON-serialisable dict."""
     panel = data["panel"]
@@ -388,6 +646,9 @@ def build_payload(data: dict) -> dict:
         "years": build_year_summary(panel),
         "results": read_headline_numbers(),
         "sources": build_sources(),
+        "datasets": build_datasets(embed=data.get("embed", True)),
+        "spec": build_specification(),
+        "map": build_map(),
     }
 
     # The scales the charts share, computed here so every chart of the same
@@ -495,6 +756,9 @@ def render(payload: dict, out_path: Path) -> None:
         meta=payload["meta"],
         results=payload["results"],
         sources=payload["sources"],
+        datasets=payload["datasets"],
+        spec=payload["spec"],
+        map_=payload["map"],
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -509,9 +773,13 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--open", action="store_true",
                         help="open the dashboard in the default browser")
+    parser.add_argument("--no-embed", action="store_true",
+                        help="do not embed the processed CSVs (smaller file, "
+                             "but the download buttons are removed)")
     args = parser.parse_args()
 
     data = load_everything(args.panel)
+    data["embed"] = not args.no_embed
     payload = build_payload(data)
     check_payload(payload)
 

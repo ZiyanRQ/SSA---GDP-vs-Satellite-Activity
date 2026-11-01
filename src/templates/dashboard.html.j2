@@ -45,10 +45,31 @@ header{
   background:var(--panel); border:1px solid var(--edge); border-radius:14px;
   backdrop-filter:blur(8px);
 }
-.brand{display:flex; align-items:center; gap:13px; min-width:260px}
-.dish{width:34px;height:34px;flex:none}
+.brand{display:flex; align-items:center; gap:15px; min-width:0; flex:1 1 300px}
 .brand h1{margin:0; font-size:15px; letter-spacing:.06em; font-weight:650}
 .brand p{margin:2px 0 0; font-size:11px; color:var(--muted)}
+.brand .loc-cap{font-family:var(--mono); font-size:9.5px; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--cyan); margin-top:4px}
+
+/* the SSA locator: real Natural Earth geometry, the same file the lights
+   were summed inside */
+.locator{position:relative; width:86px; height:66px; flex:none;
+  border:1px solid var(--edge); border-radius:9px; overflow:hidden;
+  background:radial-gradient(circle at 50% 42%, rgba(53,224,208,.11), rgba(4,7,14,.9) 72%)}
+.locator svg{position:absolute; inset:5px; width:calc(100% - 10px); height:calc(100% - 10px)}
+.locator .mc{fill:rgba(96,140,185,.20); stroke:rgba(140,185,225,.42); stroke-width:1.6;
+  vector-effect:non-scaling-stroke; transition:fill .18s}
+.locator .mc.on{fill:var(--cyan); stroke:#bffff4; stroke-width:2.4}
+.locator .mc.out{fill:rgba(70,95,125,.13); stroke:rgba(110,140,175,.22)}
+/* a slow sweep, the one piece of motion on the page */
+.locator .scan{position:absolute; left:0; right:0; height:36%; pointer-events:none;
+  background:linear-gradient(180deg, transparent, rgba(53,224,208,.16), transparent);
+  animation:sweep 5.5s linear infinite}
+@keyframes sweep{0%{top:-36%}100%{top:100%}}
+@media (prefers-reduced-motion:reduce){
+  .locator .scan{animation:none; display:none}
+  .live{animation:none}
+}
 .readouts{display:flex; flex-wrap:wrap; gap:9px}
 .ro{
   min-width:92px; padding:7px 11px; border-radius:9px;
@@ -94,8 +115,61 @@ header{
   color:#b6c8dc; background:rgba(53,224,208,.055); border-left:2px solid rgba(53,224,208,.4);
 }
 
+/* ---------- equations ---------- */
+.eqs{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:11px}
+.eq{padding:13px 14px; border-radius:10px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
+.eq-tag{font-family:var(--mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--cyan); margin-bottom:9px}
+.eq-math{
+  font-family:"Cambria Math","Latin Modern Math",Georgia,serif; font-size:16px; line-height:1.9;
+  color:#f0f6ff; padding:11px 12px; border-radius:8px; margin-bottom:10px;
+  background:rgba(53,224,208,.05); border:1px solid rgba(53,224,208,.17);
+  overflow-x:auto; white-space:nowrap;
+}
+.eq-math b{color:var(--cyan); font-weight:700}
+.eq-math sub{font-size:.68em; color:var(--muted)}
+.eq-words{margin:0 0 7px; font-size:11.5px; line-height:1.55; color:#cbd9e8}
+.eq-chart{margin:0; font-size:11px; line-height:1.5; color:var(--muted);
+  padding-left:9px; border-left:1px solid var(--edge)}
+.eq-chart span{font-family:var(--mono); font-size:8.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--amber); margin-right:6px}
+
+.sym-head{margin:17px 0 9px; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  color:#b9cde2; font-weight:650}
+.syms{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,345px),1fr)); gap:8px}
+.sym{display:grid; grid-template-columns:104px 1fr; gap:11px; padding:9px 11px;
+  border-radius:9px; background:rgba(6,11,20,.5); border:1px solid var(--edge)}
+.sym-l{border-right:1px solid var(--edge); padding-right:9px}
+.sym-g{display:block; font-family:"Cambria Math",Georgia,serif; font-size:19px; color:var(--cyan); line-height:1.25}
+.sym-g sub{font-size:.65em; color:var(--muted)}
+.sym-n{display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); margin-top:2px; line-height:1.4}
+.sym-r p{margin:0; font-size:11.5px; line-height:1.5; color:#cbd9e8}
+.sym-r .sym-c{margin-top:5px; font-size:10.5px; color:var(--muted); font-style:italic}
+
+/* ---------- processed datasets ---------- */
+.dsets{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr)); gap:11px}
+.dset{padding:12px 13px; border-radius:10px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
+.dset .top{display:flex; align-items:baseline; justify-content:space-between; gap:9px; margin-bottom:4px}
+.dset code{font-family:var(--mono); font-size:12px; color:var(--cyan); font-weight:600}
+.dset .shape{font-family:var(--mono); font-size:9.5px; color:var(--muted); white-space:nowrap}
+.dset .shape.miss{color:var(--amber)}
+.dset .path{margin:0 0 7px; font-family:var(--mono); font-size:9.5px; color:var(--faint)}
+.dset .desc{margin:0 0 10px; font-size:11.5px; line-height:1.5; color:#cbd9e8}
+.dl{font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+  padding:6px 12px; border-radius:7px; cursor:pointer; color:var(--cyan);
+  background:rgba(53,224,208,.09); border:1px solid var(--edge-hot); transition:.14s}
+.dl:hover{background:rgba(53,224,208,.2)}
+.dl.done{color:var(--amber); border-color:rgba(255,179,71,.5); background:rgba(255,179,71,.1)}
+.cols{margin-top:9px}
+.cols summary{font-family:var(--mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); cursor:pointer}
+.cols summary:hover{color:var(--muted)}
+.cols p{margin:7px 0 0; font-family:var(--mono); font-size:9.5px; line-height:1.75;
+  color:var(--muted); word-break:break-word}
+
 /* ---------- sources ---------- */
-.srcs{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:11px; margin-top:4px}
+.srcs{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr)); gap:11px; margin-top:4px}
 .src{padding:12px 13px; border-radius:10px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
 .src .top{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px}
 .src h3{margin:0; font-size:12.5px; font-weight:650; letter-spacing:.01em}
@@ -135,7 +209,7 @@ header{
 .chip.hot{color:var(--amber); border-color:rgba(255,179,71,.42); background:rgba(255,179,71,.09)}
 .chip.cs{color:var(--cyan); border-color:var(--edge-hot); background:rgba(53,224,208,.1)}
 
-.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:9px; margin-bottom:15px}
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,104px),1fr)); gap:9px; margin-bottom:15px}
 .tile{padding:9px 11px; border-radius:9px; background:rgba(6,11,20,.72); border:1px solid var(--edge)}
 .tile b{display:block; font-family:var(--mono); font-size:15px; font-weight:600}
 .tile span{display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); margin-top:2px}
@@ -171,16 +245,16 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
 
 <header>
   <div class="brand">
-    <svg class="dish" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="20" cy="20" r="18" stroke="rgba(53,224,208,.35)" stroke-width="1"/>
-      <circle cx="20" cy="20" r="12" stroke="rgba(53,224,208,.22)" stroke-width="1"/>
-      <circle cx="20" cy="20" r="6" stroke="rgba(53,224,208,.5)" stroke-width="1"/>
-      <path d="M20 2v36M2 20h36" stroke="rgba(53,224,208,.16)" stroke-width="1"/>
-      <circle cx="27.5" cy="12.5" r="2.6" fill="#35e0d0"/>
-    </svg>
+    <div class="locator" id="locator" title="Sub-Saharan Africa: the 38 countries in the panel. The selected one is lit.">
+      <svg viewBox="0 0 {{ map_.width }} {{ map_.height }}" aria-label="Map of Sub-Saharan Africa">
+        <g id="map-g"></g>
+      </svg>
+      <div class="scan"></div>
+    </div>
     <div>
       <h1>SSA DIVERGENCE MONITOR</h1>
       <p>Reported GDP growth vs satellite night-lights growth</p>
+      <p class="loc-cap" id="loc-cap">—</p>
     </div>
   </div>
   <div class="readouts">
@@ -283,6 +357,68 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   This dashboard is for choosing where to look, not for drawing conclusions.
 </div>
 {% endif %}
+
+<section class="card" style="margin-top:16px">
+  <h2>The models, and what every symbol means</h2>
+  <p class="sub">Three equations. The first defines what is plotted; the second is what is estimated; the third tests whether the first one was a fair thing to plot.</p>
+
+  <div class="eqs">
+    <div class="eq">
+      <div class="eq-tag">1 · The outcome</div>
+      <div class="eq-math">{{ spec.gap.latex }}</div>
+      <p class="eq-words">{{ spec.gap.words }}</p>
+      <p class="eq-chart"><span>On the charts</span> {{ spec.gap.chart }}</p>
+    </div>
+    <div class="eq">
+      <div class="eq-tag">2 · Main specification</div>
+      <div class="eq-math">{{ spec.main.latex }}</div>
+      <p class="eq-words">{{ spec.main.words }}</p>
+      <p class="eq-chart"><span>Read</span> θ on the absolute gap and φ on the signed gap — those are the two the design predicts a sign for.</p>
+    </div>
+    <div class="eq">
+      <div class="eq-tag">3 · Check model</div>
+      <div class="eq-math">{{ spec.check.latex }}</div>
+      <p class="eq-words">{{ spec.check.words }}</p>
+      <p class="eq-chart"><span>Result</span> β̂ = {{ "%.3f"|format(results.beta.estimate) }}, and H₀: β = 1 is rejected (t = {{ "%.1f"|format(results.beta.t_stat) }}). So the gap is a difference in two growth rates, not an elasticity.</p>
+    </div>
+  </div>
+
+  <h3 class="sym-head">Symbol by symbol</h3>
+  <div class="syms">
+    {% for s in spec.symbols %}
+    <div class="sym">
+      <div class="sym-l"><span class="sym-g">{{ s.sym|safe }}</span><span class="sym-n">{{ s.name }}</span></div>
+      <div class="sym-r">
+        <p>{{ s.means }}</p>
+        <p class="sym-c">{{ s.chart }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="hint" style="font-size:10.5px;color:var(--faint);margin-top:13px;line-height:1.65">
+    Estimated with <span style="font-family:var(--mono)">linearmodels.PanelOLS</span>, entity and time effects, standard errors clustered by country ({{ meta.n_countries }} clusters, which is close to the rule-of-thumb minimum of about 30 and belongs in the limitations). Capacity and accountability are centred on their sample means, so the intercept and the interaction terms are read at average capacity and accountability rather than at zero, which is outside the data.
+  </p>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <h2>Processed datasets</h2>
+  <p class="sub">What this project built from the raw sources. Each is produced by one module, re-runs byte-identically, and{% if datasets[0].csv %} is embedded in this page — the download buttons need no server and no internet{% else %} lives in the repository{% endif %}.</p>
+  <div class="dsets">
+    {% for d in datasets %}
+    <div class="dset">
+      <div class="top">
+        <code>{{ d.file }}</code>
+        {% if d.present %}<span class="shape">{{ d.rows }} × {{ d.columns }}</span>{% else %}<span class="shape miss">absent</span>{% endif %}
+      </div>
+      <p class="path">data/{{ d.folder }}/ &nbsp;·&nbsp; built by {{ d.producer }} &nbsp;·&nbsp; {{ d.size }}</p>
+      <p class="desc">{{ d.description }}</p>
+      {% if d.csv %}<button class="dl" data-file="{{ d.file }}">Download CSV</button>{% endif %}
+      {% if d.present %}<details class="cols"><summary>{{ d.columns }} columns</summary><p>{{ d.column_names|join(" · ") }}</p></details>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
 
 <section class="card" style="margin-top:16px">
   <h2>Sources</h2>
@@ -471,7 +607,7 @@ function drawRank(){
     row.className = "rrow" + (c.is_case_study ? " cs" : "");
     row.setAttribute("role","option");
     row.setAttribute("aria-selected", c.iso3c === selected);
-    row.onclick = ()=>{ selected = c.iso3c; drawRank(); drawDetail(); drawYears(); drawScatter(); };
+    row.onclick = ()=>{ selected = c.iso3c; redraw(); };
 
     const pos = document.createElement("div");
     pos.className = "pos"; pos.textContent = String(i+1).padStart(2,"0");
@@ -707,7 +843,7 @@ function drawScatter(){
       fill: on ? "#fff" : (c.mean_gap<0?"rgba(53,224,208,.62)":"rgba(255,179,71,.62)"),
       stroke: on ? C.cyan : "transparent", "stroke-width":2});
     dot.style.cursor="pointer";
-    dot.onclick = ()=>{ selected=c.iso3c; drawRank(); drawDetail(); drawYears(); drawScatter(); };
+    dot.onclick = ()=>{ selected=c.iso3c; redraw(); };
     hoverable(dot, `${c.name} (${c.iso3c})\n${XAXES.find(a=>a.key===xKey).label}: ${c[xKey].toFixed(2)}\nmean gap: ${fmt(c.mean_gap)}`);
     s.appendChild(dot);
     if(on || c.is_case_study){
@@ -717,6 +853,30 @@ function drawScatter(){
       s.appendChild(t);
     }
   });
+}
+
+/* ---------- the SSA locator map ---------- */
+function drawMap(){
+  const g = document.getElementById("map-g");
+  g.innerHTML = "";
+  const inPanel = new Set(DATA.countries.map(c=>c.iso3c));
+  // Countries outside the balanced panel are still drawn, dimmed: leaving
+  // them off would misrepresent the region as having only 38 countries.
+  Object.entries(DATA.map.paths).forEach(([iso, d])=>{
+    const p = el("path",{d:d, class:"mc" + (inPanel.has(iso) ? "" : " out")});
+    if(inPanel.has(iso)){
+      p.style.cursor = "pointer";
+      p.onclick = ()=>{ selected = iso; redraw(); };
+      hoverable(p, `${byIso[iso].name} (${iso})\nmean gap ${fmt(byIso[iso].mean_gap)}`);
+    } else {
+      hoverable(p, `${iso}\nnot in the balanced panel`);
+    }
+    if(iso === selected) p.classList.add("on");
+    g.appendChild(p);
+  });
+  const c = byIso[selected];
+  document.getElementById("loc-cap").textContent =
+    `${c.iso3c} · ${c.name}`;
 }
 
 function drawGrowthScaleTabs(){
@@ -735,9 +895,32 @@ function drawGrowthScaleTabs(){
   });
 }
 
+/* ---------- CSV downloads ---------- */
+// The CSVs travel inside this file, so a download is just a Blob: no
+// server, no network, and the file still works from a USB stick.
+const CSVS = Object.fromEntries(
+  DATA.datasets.filter(d=>d.csv).map(d=>[d.file, d.csv]));
+
+document.querySelectorAll(".dl").forEach(button=>{
+  button.onclick = ()=>{
+    const name = button.dataset.file;
+    const blob = new Blob([CSVS[name]], {type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    const was = button.textContent;
+    button.textContent = "Saved ✓"; button.classList.add("done");
+    setTimeout(()=>{ button.textContent = was; button.classList.remove("done"); }, 1800);
+  };
+});
+
+/* everything that depends on which country is selected */
+function redraw(){ drawRank(); drawMap(); drawDetail(); drawYears(); drawScatter(); }
+
 /* ---------- go ---------- */
-drawSorts(); drawRank(); drawGrowthScaleTabs(); drawDetail();
-drawYears(); drawXaxes(); drawScatter();
+drawSorts(); drawGrowthScaleTabs(); drawXaxes(); redraw();
 addEventListener("resize", ()=>{ drawDetail(); drawYears(); drawScatter(); });
 </script>
 </body>
