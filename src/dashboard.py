@@ -511,6 +511,42 @@ def build_datasets(embed: bool = True) -> list[dict]:
     return datasets
 
 
+def build_context(panel: pd.DataFrame) -> dict:
+    """Live figures for the rationale section.
+
+    Computed rather than written into the template, because a motivating
+    statistic that has quietly stopped being true is worse than none. If the
+    data changes, the argument on the page changes with it.
+    """
+    by_country = panel.groupby("iso3c")[config.OUTCOME_SIGNED].mean()
+    lights_by_year = panel.groupby("year")["d_ln_lights"].median()
+    artefact_year = int(lights_by_year.idxmax())
+    others = lights_by_year.drop(artefact_year)
+
+    median_abs_gap = float(panel[config.OUTCOME_ABSOLUTE].median())
+    median_growth = float(panel["d_ln_gdp"].median())
+
+    return {
+        "n_negative_countries": int((by_country < 0).sum()),
+        "n_countries": int(len(by_country)),
+        "median_abs_gap": median_abs_gap,
+        "median_growth": median_growth,
+        # The figure that makes the case: the typical year-to-year
+        # disagreement is a multiple of the typical growth rate, so this is
+        # not a rounding-error problem.
+        "disagreement_ratio": median_abs_gap / median_growth,
+        "median_lights_growth": float(panel["d_ln_lights"].median()),
+        "artefact_year": artefact_year,
+        "artefact_median": float(lights_by_year.max()),
+        "other_years_median": float(others.median()),
+        "n_rebasing": int(panel["rebased"].sum()),
+        "n_rebasing_countries": int(
+            panel.loc[panel["rebased"] == 1, "iso3c"].nunique()),
+        "widest": by_country.idxmin(),
+        "widest_value": float(by_country.min()),
+    }
+
+
 def build_specification() -> dict:
     """The equations the dashboard displays, with every symbol explained.
 
@@ -648,6 +684,7 @@ def build_payload(data: dict) -> dict:
         "sources": build_sources(),
         "datasets": build_datasets(embed=data.get("embed", True)),
         "spec": build_specification(),
+        "context": build_context(panel),
         "map": build_map(),
     }
 
@@ -758,6 +795,7 @@ def render(payload: dict, out_path: Path) -> None:
         sources=payload["sources"],
         datasets=payload["datasets"],
         spec=payload["spec"],
+        context=payload["context"],
         map_=payload["map"],
     )
 

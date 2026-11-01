@@ -115,6 +115,57 @@ header{
   color:#b6c8dc; background:rgba(53,224,208,.055); border-left:2px solid rgba(53,224,208,.4);
 }
 
+/* ---------- why this question ---------- */
+.why{margin-bottom:16px}
+.why-head{display:flex; gap:16px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap}
+.why-toggle{
+  flex:none; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+  padding:8px 14px; border-radius:8px; cursor:pointer; color:var(--cyan);
+  background:rgba(53,224,208,.1); border:1px solid var(--edge-hot); transition:.14s;
+}
+.why-toggle:hover{background:rgba(53,224,208,.2)}
+.bigstats{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); gap:11px; margin-top:13px}
+.bs{padding:13px 14px; border-radius:11px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
+.bs.hot{background:rgba(53,224,208,.08); border-color:var(--edge-hot)}
+.bs b{display:block; font-family:var(--mono); font-size:27px; font-weight:650; letter-spacing:-.02em; line-height:1.1}
+.bs.hot b{color:var(--cyan)}
+.bs span{display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--faint); margin:5px 0 7px}
+.bs p{margin:0; font-size:11px; line-height:1.5; color:var(--muted)}
+.bs.hot p{color:#cbd9e8}
+.why-body{margin-top:15px; padding-top:15px; border-top:1px solid var(--edge)}
+.why-cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:22px}
+.why-cols h3{margin:0 0 8px; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  color:#b9cde2; font-weight:650}
+.why-cols h3:not(:first-child){margin-top:16px}
+.why-cols p{margin:0 0 9px; font-size:12px; line-height:1.6; color:#cbd9e8}
+.why-cols ul{margin:0 0 4px; padding-left:17px}
+.why-cols li{font-size:12px; line-height:1.6; color:#cbd9e8; margin-bottom:8px}
+.why-cols li b{color:#eaf2fb}
+.why-null{padding:10px 12px; border-radius:9px; background:rgba(255,179,71,.07);
+  border:1px solid rgba(255,179,71,.26); color:#e7d4b4 !important; font-size:11.5px !important}
+
+/* ---------- comparison ---------- */
+.cmp-pick{display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 11px}
+.pill{
+  font-family:var(--mono); font-size:10px; letter-spacing:.04em; padding:4px 8px;
+  border-radius:6px; cursor:pointer; color:var(--muted);
+  background:rgba(8,13,24,.8); border:1px solid var(--edge); transition:.12s;
+}
+.pill:hover{color:var(--ink); border-color:var(--edge-hot)}
+.pill[aria-pressed="true"]{color:#04070e; font-weight:700; border-color:transparent}
+.cmp-bar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px}
+.cmp-note{font-family:var(--mono); font-size:9.5px; color:var(--faint)}
+.cmp-table{width:100%; border-collapse:collapse; margin-top:13px; font-size:11.5px}
+.cmp-table th{font-family:var(--mono); font-size:8.5px; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--faint); text-align:right; padding:7px 9px; border-bottom:1px solid var(--edge); font-weight:600}
+.cmp-table th:first-child, .cmp-table td:first-child{text-align:left}
+.cmp-table td{padding:7px 9px; border-bottom:1px solid rgba(96,132,178,.1);
+  font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; color:#cbd9e8}
+.cmp-table tbody tr:hover td{background:rgba(53,224,208,.05)}
+.cmp-swatch{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:7px; vertical-align:middle}
+.cmp-name{color:var(--ink); font-weight:600}
+
 /* ---------- equations ---------- */
 .eqs{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:11px}
 .eq{padding:13px 14px; border-radius:10px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
@@ -267,6 +318,69 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   </div>
 </header>
 
+<section class="card why">
+  <div class="why-head">
+    <div>
+      <h2>Why this question</h2>
+      <p class="sub" style="max-width:780px">GDP decides aid allocations, debt sustainability assessments and domestic policy. In much of Sub-Saharan Africa it rests on thin statistical foundations — Jerven's point. Night lights, measured from orbit on a fixed instrument, are an <em>independent</em> check that no statistics office can revise.</p>
+    </div>
+    <button class="why-toggle" id="why-toggle" aria-expanded="false">Read the argument</button>
+  </div>
+
+  <div class="bigstats">
+    <div class="bs">
+      <b class="num">{{ "%.3f"|format(context.median_abs_gap) }}</b>
+      <span>Median yearly disagreement</span>
+      <p>Between reported GDP growth and lights growth, in log points.</p>
+    </div>
+    <div class="bs">
+      <b class="num">{{ "%.3f"|format(context.median_growth) }}</b>
+      <span>Median GDP growth</span>
+      <p>Over the same {{ meta.n_obs }} country-years, in log points.</p>
+    </div>
+    <div class="bs hot">
+      <b class="num">{{ "%.1f"|format(context.disagreement_ratio) }}×</b>
+      <span>Disagreement ÷ growth</span>
+      <p><b>The reason this is worth studying.</b> The typical gap is larger than the thing being measured.</p>
+    </div>
+    <div class="bs">
+      <b class="num">{{ context.n_negative_countries }}/{{ context.n_countries }}</b>
+      <span>Countries where lights ran ahead</span>
+      <p>Mean gap below zero over the window — a one-directional pattern, not noise.</p>
+    </div>
+  </div>
+
+  <div class="why-body" id="why-body" hidden>
+    <div class="why-cols">
+      <div>
+        <h3>What the data says so far</h3>
+        <ul>
+          <li><b>The two series disagree, consistently and in one direction.</b> Lights outgrew reported GDP in {{ "%.0f"|format(meta.share_negative*100) }}% of country-years and in {{ context.n_negative_countries }} of {{ context.n_countries }} countries. That is a pattern to explain, not a residual to ignore.</li>
+          <li><b>But the obvious explanations fail.</b> Neither statistical capacity nor political accountability moves the gap once country and year effects are taken out. Both coefficients sit on zero.</li>
+          <li><b>And the gap's own premise fails too.</b> GDP and lights do not move one-for-one: β̂ = {{ "%.3f"|format(results.beta.estimate) }}, not 1. The gap is a difference between two growth rates measured on different things, not a structural elasticity.</li>
+          <li><b>Measurement is doing real work in the middle of all this.</b> In {{ context.artefact_year }} a VIIRS compositing change lifted median lights growth to {{ "%.3f"|format(context.artefact_median) }} against {{ "%.3f"|format(context.other_years_median) }} in a typical year — and it hit dim countries hardest, so year effects cannot remove it.</li>
+          <li><b>GDP gets rewritten as you watch.</b> {{ context.n_rebasing }} base-year changes across {{ context.n_rebasing_countries }} of the {{ context.n_countries }} countries inside six years. Half the region restated its national accounts during the window.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What this is not</h3>
+        <p>Divergence is <b>not</b> evidence of manipulation, and the dashboard is built so it cannot be read that way by accident.</p>
+        <ul>
+          <li>Lights miss agriculture, the informal economy and anything off-grid — all large in this region.</li>
+          <li>Lights add things GDP does not: gas flaring, and new electricity connections that light a village without changing output much.</li>
+          <li>The satellite record has its own breaks, which is why every chart offers a bright-cells series alongside the headline one.</li>
+        </ul>
+        <h3>So what is it for</h3>
+        <p>A country with a persistent, unexplained gap is a country worth looking at closely — with its statistics office's own releases, its electrification programme and its rebasing history in hand. <b>The ranking chooses where to look. It does not settle anything.</b></p>
+        <p class="why-null">On the null results: they are <b>bounds, not absences</b>. This design could only have detected
+          {%- for m in results.mde %}
+          {% if not loop.first %} and {% endif %}a{{ "n" if m.term.startswith("v") }} {{ "accountability" if m.term.startswith("v") else "capacity" }} effect larger than <b>{{ "%.2f"|format(m.mde_in_sd) }}</b> of a within-country standard deviation
+          {%- endfor %}. Smaller real effects would have been invisible here, and saying "no relationship" would overclaim.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <div class="grid">
 
   <!-- ====== ranking ====== -->
@@ -357,6 +471,21 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   This dashboard is for choosing where to look, not for drawing conclusions.
 </div>
 {% endif %}
+
+<section class="card" style="margin-top:16px">
+  <h2>Compare countries</h2>
+  <p class="sub">Pick up to eight. Every series is on one shared axis, so these lines are directly comparable — unlike the single-country trace above, which can be fitted to itself.</p>
+  <div class="cmp-bar">
+    <div class="tabs" id="cmp-metric" role="tablist" style="margin:0"></div>
+    <span class="cmp-note" id="cmp-count"></span>
+    <button class="tab" id="cmp-clear" type="button">Clear</button>
+    <button class="tab" id="cmp-cases" type="button">Case studies</button>
+    <button class="tab" id="cmp-widest" type="button">5 widest gaps</button>
+  </div>
+  <div class="cmp-pick" id="cmp-pick"></div>
+  <div id="c-compare"></div>
+  <table class="cmp-table" id="cmp-table"></table>
+</section>
 
 <section class="card" style="margin-top:16px">
   <h2>The models, and what every symbol means</h2>
@@ -895,6 +1024,167 @@ function drawGrowthScaleTabs(){
   });
 }
 
+/* ---------- compare countries ---------- */
+// Eight hues that stay apart from each other on a dark background. The cap
+// is eight because a ninth line stops being readable, not because of any
+// limit in the data.
+const CMP_COLOURS = ["#35e0d0","#9d7bff","#ffb347","#ff4f8b",
+                     "#6ee787","#58a6ff","#ff9b54","#d2a8ff"];
+const CMP_MAX = 8;
+
+const CMP_METRICS = [
+  {key:"gap", label:"Gap", scale:"gap",
+   help:"GAP\n\nΔln GDP − Δln lights, year by year.\n\nBelow the zero line, lights grew faster than\nreported GDP."},
+  {key:"gap_bright", label:"Gap (bright cells)", scale:"gap",
+   help:"GAP, BRIGHT CELLS ONLY\n\nThe same gap, but lights counted only above a\nfixed 5 nW/cm²/sr floor.\n\nIf a country's line moves a lot between this and\nthe plain gap, the 2017 detection change is\ndoing work in its series."},
+  {key:"d_ln_gdp", label:"Δln GDP", scale:"growth",
+   help:"REPORTED GDP GROWTH\n\nLog change in real GDP, year on year.\n0.05 ≈ 5% growth."},
+  {key:"d_ln_lights", label:"Δln lights", scale:"growth",
+   help:"NIGHT-LIGHTS GROWTH\n\nLog change in total radiance inside the\ncountry's borders.\n\nWatch 2017: most countries jump together, which\nis the detection change rather than a boom."},
+  {key:"spi_rebuilt", label:"Capacity", scale:"spi",
+   help:"STATISTICAL CAPACITY\n\nRebuilt SPI, 0–100, by year.\n\nShows which countries actually moved: the\nfixed-effects models can only use within-country\nchange, so a flat line contributes nothing."},
+  {key:"elec_access", label:"Electrification", scale:"elec",
+   help:"ELECTRICITY ACCESS\n\nShare of population with access, by year.\n\nA steep climb here is a reason for lights to\noutrun GDP that has nothing to do with how GDP\nis reported."}
+];
+
+let compareSet = [...DATA.meta.case_studies];
+let cmpMetric = "gap";
+
+function cmpScale(which){
+  const s = DATA.scales;
+  if(which === "gap") return [s.gap_min, s.gap_max];
+  if(which === "growth") return [Math.min(s.growth_min,0), s.growth_max];
+  if(which === "spi") return [s.spi_min, s.spi_max];
+  // electrification: always the full 0-100, so the climb is read honestly
+  return [0, 100];
+}
+
+function drawComparePicker(){
+  const host = document.getElementById("cmp-pick");
+  host.innerHTML = "";
+  [...DATA.countries].sort((a,b)=>a.iso3c.localeCompare(b.iso3c)).forEach(c=>{
+    const on = compareSet.includes(c.iso3c);
+    const b = document.createElement("button");
+    b.className = "pill"; b.type = "button";
+    b.setAttribute("aria-pressed", on);
+    b.textContent = c.iso3c;
+    if(on){
+      const colour = CMP_COLOURS[compareSet.indexOf(c.iso3c) % CMP_COLOURS.length];
+      b.style.background = colour; b.style.color = "#04070e";
+    }
+    hoverable(b, `${c.name} (${c.iso3c})\nmean gap ${fmt(c.mean_gap)}\n\n${on?"Click to remove":"Click to add to the comparison"}`);
+    b.onclick = ()=>{
+      if(on) compareSet = compareSet.filter(x=>x!==c.iso3c);
+      else if(compareSet.length < CMP_MAX) compareSet.push(c.iso3c);
+      drawCompare();
+    };
+    host.appendChild(b);
+  });
+  document.getElementById("cmp-count").textContent =
+    `${compareSet.length} of ${CMP_MAX} selected`;
+}
+
+function drawCompareMetrics(){
+  const host = document.getElementById("cmp-metric");
+  host.innerHTML = "";
+  CMP_METRICS.forEach(m=>{
+    const b = document.createElement("button");
+    b.className="tab"; b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", m.key===cmpMetric);
+    b.textContent = m.label;
+    hoverable(b, m.help);
+    b.onclick = ()=>{ cmpMetric = m.key; drawCompare(); };
+    host.appendChild(b);
+  });
+}
+
+function drawCompareChart(){
+  const host = document.getElementById("c-compare");
+  const W=760, H=280, pad={l:46,r:14,t:14,b:30};
+  const s = svg(host, W, H);
+  const metric = CMP_METRICS.find(m=>m.key===cmpMetric);
+  const [lo,hi] = cmpScale(metric.scale);
+  const y = yAxis(s, pad, W, H, lo, hi, 6);
+  const years = DATA.years.map(d=>d.year);
+  const x = xLabels(s, pad, W, H, years);
+
+  if(!compareSet.length){
+    const t = el("text",{x:W/2, y:H/2, "text-anchor":"middle", fill:C.faint,
+      "font-size":12, "font-family":"ui-monospace,monospace"});
+    t.textContent = "Select countries below to compare them";
+    s.appendChild(t);
+    return;
+  }
+
+  compareSet.forEach((iso,n)=>{
+    const c = byIso[iso];
+    const colour = CMP_COLOURS[n % CMP_COLOURS.length];
+    const pts = c.series.map((p,i)=>`${x(i)},${y(p[cmpMetric])}`).join(" ");
+    s.appendChild(el("polyline",{points:pts, fill:"none", stroke:colour,
+      "stroke-width":2, "stroke-linejoin":"round", "stroke-linecap":"round"}));
+    c.series.forEach((p,i)=>{
+      const dot = el("circle",{cx:x(i), cy:y(p[cmpMetric]), r:3.2,
+        fill:"#070c16", stroke:colour, "stroke-width":1.8});
+      hoverable(dot, `${c.name} (${iso}) ${p.year}\n${metric.label}: ${
+        metric.scale==="gap"||metric.scale==="growth" ? fmt(p[cmpMetric]) : p[cmpMetric].toFixed(1)}`);
+      s.appendChild(dot);
+      if(p.rebased && (cmpMetric==="gap"||cmpMetric==="gap_bright")){
+        s.appendChild(el("circle",{cx:x(i), cy:y(p[cmpMetric]), r:7,
+          fill:"none", stroke:colour, "stroke-width":1, "stroke-dasharray":"2 2",
+          opacity:.75}));
+      }
+    });
+    // label the line at its right-hand end rather than in a legend
+    const last = c.series[c.series.length-1];
+    const t = el("text",{x:x(years.length-1)+7, y:y(last[cmpMetric])+3.5,
+      fill:colour, "font-size":9.5, "font-family":"ui-monospace,monospace"});
+    t.textContent = iso;
+    s.appendChild(t);
+  });
+
+  if(cmpMetric==="gap"||cmpMetric==="gap_bright"){
+    const note = el("text",{x:pad.l, y:H-4, fill:C.faint, "font-size":9,
+      "font-family":"ui-monospace,monospace"});
+    note.textContent = "dashed ring = rebasing year";
+    s.appendChild(note);
+  }
+}
+
+function drawCompareTable(){
+  const table = document.getElementById("cmp-table");
+  if(!compareSet.length){ table.innerHTML = ""; return; }
+  const cols = [
+    ["Country", c=>`<span class="cmp-name">${c.name}</span>`],
+    ["Mean gap", c=>fmt(c.mean_gap)],
+    ["Mean |gap|", c=>c.mean_abs_gap.toFixed(3)],
+    ["Volatility", c=>c.volatility.toFixed(3)],
+    ["Δln GDP", c=>fmt(c.mean_d_ln_gdp)],
+    ["Δln lights", c=>fmt(c.mean_d_ln_lights)],
+    ["Capacity", c=>c.spi_rebuilt.toFixed(1)],
+    ["Account.", c=>c.accountability.toFixed(2)],
+    ["Elec. +pp", c=>(c.elec_access_end-c.elec_access_start).toFixed(1)],
+    ["Rebased", c=>c.rebasing_years.length ? c.rebasing_years.join(", ") : "—"]
+  ];
+  let html = "<thead><tr>" + cols.map(([h])=>`<th>${h}</th>`).join("") +
+             "</tr></thead><tbody>";
+  compareSet.forEach((iso,n)=>{
+    const c = byIso[iso];
+    const colour = CMP_COLOURS[n % CMP_COLOURS.length];
+    html += "<tr>" + cols.map(([h,f],i)=>{
+      const cell = f(c);
+      return i===0
+        ? `<td><span class="cmp-swatch" style="background:${colour}"></span>${cell}</td>`
+        : `<td>${cell}</td>`;
+    }).join("") + "</tr>";
+  });
+  table.innerHTML = html + "</tbody>";
+}
+
+function drawCompare(){
+  drawComparePicker(); drawCompareMetrics();
+  drawCompareChart(); drawCompareTable();
+}
+
 /* ---------- CSV downloads ---------- */
 // The CSVs travel inside this file, so a download is just a Blob: no
 // server, no network, and the file still works from a USB stick.
@@ -916,11 +1206,29 @@ document.querySelectorAll(".dl").forEach(button=>{
   };
 });
 
+/* ---------- the quick-pick buttons and the rationale toggle ---------- */
+document.getElementById("cmp-clear").onclick = ()=>{ compareSet = []; drawCompare(); };
+document.getElementById("cmp-cases").onclick = ()=>{
+  compareSet = [...DATA.meta.case_studies]; drawCompare(); };
+document.getElementById("cmp-widest").onclick = ()=>{
+  compareSet = [...DATA.countries].sort((a,b)=>a.mean_gap-b.mean_gap)
+    .slice(0,5).map(c=>c.iso3c);
+  drawCompare(); };
+
+const whyToggle = document.getElementById("why-toggle");
+const whyBody = document.getElementById("why-body");
+whyToggle.onclick = ()=>{
+  const open = whyBody.hasAttribute("hidden");
+  if(open) whyBody.removeAttribute("hidden"); else whyBody.setAttribute("hidden","");
+  whyToggle.setAttribute("aria-expanded", open);
+  whyToggle.textContent = open ? "Hide the argument" : "Read the argument";
+};
+
 /* everything that depends on which country is selected */
 function redraw(){ drawRank(); drawMap(); drawDetail(); drawYears(); drawScatter(); }
 
 /* ---------- go ---------- */
-drawSorts(); drawGrowthScaleTabs(); drawXaxes(); redraw();
+drawSorts(); drawGrowthScaleTabs(); drawXaxes(); redraw(); drawCompare();
 addEventListener("resize", ()=>{ drawDetail(); drawYears(); drawScatter(); });
 </script>
 </body>

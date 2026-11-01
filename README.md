@@ -707,6 +707,20 @@ Re-run `models.py` and the dashboard changes with it.
 The charts are hand-written SVG rather than a plotting library: it keeps the
 project to its existing dependencies and gives exact control over the layout.
 
+It opens with **Why this question** — the case for the project, built on live
+figures rather than prose alone. The one that makes it: the median yearly
+disagreement between reported GDP growth and lights growth is **0.081 log
+points against median GDP growth of 0.037**, so *the typical gap is more than
+twice the size of the thing being measured*. An expandable panel sets out what
+the data says so far, what the project explicitly is **not** claiming, and why
+the nulls are bounds rather than absences.
+
+**Compare countries** puts up to eight countries on one shared axis — gap,
+bright-cells gap, GDP growth, lights growth, capacity or electrification — with
+rebasing years ringed, and a sortable summary table underneath. Quick picks for
+the case studies and the five widest gaps. Unlike the single-country trace,
+these lines are always on a common scale, so they are directly comparable.
+
 It also carries three reference sections:
 
 - **A Sub-Saharan Africa locator**, generated from the *same* Natural Earth
