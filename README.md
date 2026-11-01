@@ -39,7 +39,7 @@ and `PanelOLS` verified to recover a known slope exactly.
 | 5a | `src/verify_sources.py` | done, all checks pass |
 | 6 | `src/build_panel.py` | done, 38 countries / 228 rows |
 | 6a | `src/verify_panel.py` | done, all checks pass |
-| 7 | `src/models.py` | documented stub |
+| 7 | `src/models.py` | done, estimated; headline results null |
 
 Each of the seven interim tables re-runs **byte-identically** from the raw
 files, so the pipeline is reproducible and not merely runnable.
@@ -162,7 +162,7 @@ python -m src.build_panel
 # 6. gate: audit the built panel value by value against its sources
 python -m src.verify_panel
 
-python -m src.models
+python -m src.models          # main, estimators, check model, robustness
 ```
 
 `verify_sources` exits non-zero if anything would make the merge silently
@@ -573,6 +573,100 @@ is available on exactly the same country-years as the published one. It costs
 nothing in reproduction: in this data the published score exists if and only if
 all five pillars do, which is now asserted rather than assumed.
 
+## Results
+
+**Nothing here is a finished result.** The models run, the estimator is
+verified, and the headline coefficients are null. What follows is what the
+data currently says, not a conclusion.
+
+### The two coefficients the design predicts a sign for
+
+Country and year fixed effects, standard errors clustered by country,
+228 observations, 38 countries.
+
+| Outcome | Coefficient | Estimate | SE | p |
+| --- | --- | --- | --- | --- |
+| abs_gap | spi_rebuilt (capacity) | −0.00003 | 0.0018 | 0.995 |
+| gap | v2x_accountability | −0.0048 | 0.0332 | 0.886 |
+
+Both are **indistinguishable from zero**, and both survive every robustness
+check as null: published SPI instead of rebuilt, Pillar 4, the no-CPIBY
+variant, the rebasing dummy, dropping COVID, pre-COVID years only, excluding
+Ghana, excluding Kenya, excluding oil producers, excluding the biggest
+accountability movers, and the bright-cells lights measure.
+
+The estimator itself is not in doubt: the fixed-effects coefficients were
+reproduced to **3.5 × 10⁻¹⁴** against a hand-coded two-way within
+transformation followed by plain OLS, and the clustered standard errors agree
+with `statsmodels` up to a small-sample correction that makes
+`linearmodels`' the more conservative of the two.
+
+### A null needs a power statement, or it says nothing
+
+"We found nothing" and "we could not have found anything smaller than a very
+large effect" look identical in a regression table. The minimum detectable
+effect at 80% power and a 5% two-sided test is about 2.8 standard errors,
+reported per one **within**-country SD of the regressor as a share of the
+outcome's own within-country SD:
+
+| Effect of a 1-within-SD move in… | …on | smallest detectable | observed |
+| --- | --- | --- | --- |
+| spi_rebuilt (4.83 points) | abs_gap | **0.32 SD** | 0.001 SD |
+| v2x_accountability (0.131) | gap | **0.11 SD** | 0.006 SD |
+
+So the accountability null is reasonably informative — it rules out anything
+above about a tenth of a within-country standard deviation. The capacity null
+is weaker: effects below a third of a standard deviation were never
+detectable here. Both should be written up as *bounds*, not as "no
+relationship".
+
+### The check model rejects the gap's central assumption
+
+The gap assumes GDP and lights move one-for-one. Estimating that elasticity
+instead of assuming it:
+
+> **β̂ = 0.056** (SE 0.025) — against H₀: β = 1,
+> **t = −37.3** on 37 df, **p < 0.000001. Rejected.**
+
+Within country and year, a 1% rise in night lights is associated with roughly
+a **0.06%** rise in reported GDP, not 1%. That is well below even the ~0.3
+that Henderson, Storeygard and Weil report on older DMSP data.
+
+This has a direct consequence for how the whole project is written up: the
+gap is a **difference in two growth rates**, not a structural elasticity, and
+it should be described that way. Some of the attenuation is real measurement
+error in both series, which fixed effects amplify — that is a limitation, not
+a correction to apply.
+
+### What the model does explain
+
+Very little. On the main two-way specification, R² on the demeaned data is
+**0.042** for the signed gap and **0.079** for the absolute gap. (The
+estimator comparison reaches 0.21 only because it drops year effects, so the
+year-to-year common movement is left in the outcome for the regressors to
+explain.)
+
+COVID stringency is the one consistently significant regressor (p ≈ 0.001 on
+both outcomes, opposite signs), and the case-study predictions correlate
+**0.597** with the actual gaps. Ghana's largest positive residual is
+**2019 — its rebasing year** — and Kenya's is 2020. Suggestive, and only
+suggestive: with two countries and six years each it cannot be more than that,
+which is the reason the 38-country panel exists.
+
+> **A reporting note.** `linearmodels`' `rsquared_within` is **not** the number
+> above and is routinely negative here. With time effects absorbed it is
+> computed against entity-demeaned data using parameters never chosen to fit
+> it. The figure to quote is `rsquared`, the fit on the two-way demeaned data
+> the model is actually estimated on.
+
+### The Hausman test does not decide anything here
+
+V_FE − V_RE is **not positive definite** (smallest eigenvalue −6.2 × 10⁻⁷), so
+the statistic is not interpretable in the usual way and is reported rather
+than relied on. Fixed effects remain the main estimator on the design
+argument — unobserved country characteristics are certain to be correlated
+with statistical capacity — not on a test that did not run cleanly.
+
 ## Open tasks
 
 Done since the brief was written: VIIRS 2015–2021 processed (no countries lost,
@@ -582,8 +676,9 @@ stringency added, and every count in the brief reconciled.
 
 Still open:
 
-1. Estimate the models (`src/models.py`). The panel is built and audited;
-   nothing has been estimated yet.
+1. Interpret and write up the null results: they are bounds, not absences
+   (see the minimum detectable effects above), and the rejection of beta = 1
+   changes how the gap itself should be described throughout.
 2. Decide the accountability scale (raw, standardised, or V-Dem's `osp` 0–1),
    and whether to centre SPI and accountability.
 3. Add oil rents to the panel (already loaded in `wdi_long.csv`) and get GSS
