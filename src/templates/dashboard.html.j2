@@ -86,6 +86,28 @@ header{
 }
 .tab:hover{color:var(--ink); border-color:var(--edge-hot)}
 .tab[aria-selected="true"]{background:rgba(53,224,208,.13); color:var(--cyan); border-color:var(--edge-hot)}
+.tab::after{content:"?"; font-size:8px; margin-left:5px; opacity:.4; vertical-align:super}
+
+/* the always-visible one-line explanation under a set of tabs */
+.explain{
+  margin:0 0 11px; padding:7px 10px; border-radius:8px; font-size:11.5px; line-height:1.5;
+  color:#b6c8dc; background:rgba(53,224,208,.055); border-left:2px solid rgba(53,224,208,.4);
+}
+
+/* ---------- sources ---------- */
+.srcs{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:11px; margin-top:4px}
+.src{padding:12px 13px; border-radius:10px; background:rgba(6,11,20,.66); border:1px solid var(--edge)}
+.src .top{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px}
+.src h3{margin:0; font-size:12.5px; font-weight:650; letter-spacing:.01em}
+.src .state{font-family:var(--mono); font-size:8.5px; letter-spacing:.1em; text-transform:uppercase;
+  padding:2px 7px; border-radius:20px; white-space:nowrap}
+.src .ok{color:var(--cyan); background:rgba(53,224,208,.1); border:1px solid var(--edge-hot)}
+.src .no{color:var(--amber); background:rgba(255,179,71,.09); border:1px solid rgba(255,179,71,.4)}
+.src .prov{margin:0 0 7px; font-size:11.5px; color:#cbd9e8; line-height:1.45}
+.src .det{margin:0 0 7px; font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1.6; word-break:break-word}
+.src .nte{margin:0 0 8px; font-size:11px; color:var(--muted); line-height:1.5; padding-left:9px; border-left:1px solid var(--edge)}
+.src a{color:var(--cyan); font-family:var(--mono); font-size:10px; text-decoration:none; word-break:break-all}
+.src a:hover{text-decoration:underline}
 
 /* ---------- ranking ---------- */
 .rank{max-height:620px; overflow-y:auto; margin:0 -6px; padding:0 6px}
@@ -178,6 +200,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
     <h2>Divergence Index</h2>
     <p class="sub">All {{ meta.n_countries }} countries ranked. Bars run from zero: <span style="color:var(--cyan)">cyan = lights outgrew GDP</span>, <span style="color:var(--amber)">amber = GDP outgrew lights</span>. Click a row to load it.</p>
     <div class="tabs" id="sorts" role="tablist"></div>
+    <p class="explain" id="sort-desc"></p>
     <div class="rank" id="rank" role="listbox" aria-label="Countries ranked by divergence"></div>
   </section>
 
@@ -245,6 +268,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
     <h2>Cross-section</h2>
     <p class="sub">Each dot is a country's six-year mean. This is the between-country picture; the models use within-country variation, so a pattern here need not survive fixed effects.</p>
     <div class="tabs" id="xaxis" role="tablist"></div>
+    <p class="explain" id="xaxis-desc"></p>
     <div id="c-scatter"></div>
   </section>
 </div>
@@ -259,6 +283,32 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   This dashboard is for choosing where to look, not for drawing conclusions.
 </div>
 {% endif %}
+
+<section class="card" style="margin-top:16px">
+  <h2>Sources</h2>
+  <p class="sub">Every number on this page traces to one of these. "On disk" is read from the filesystem when the dashboard is built, not copied from documentation — so it cannot claim a file is present when it is not.</p>
+  <div class="srcs">
+    {% for s in sources %}
+    <div class="src">
+      <div class="top">
+        <h3>{{ s.name }}</h3>
+        <span class="state {{ 'ok' if s.present else 'no' }}">
+          {%- if not s.present %}Not present
+          {%- elif s.size == "—" %}Reference
+          {%- else %}On disk · {{ s.size }}{% endif -%}
+        </span>
+      </div>
+      <p class="prov">{{ s.provides }}</p>
+      <p class="det">{{ s.detail }}<br>{{ s.vintage }}</p>
+      <p class="nte">{{ s.note }}</p>
+      <a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.url }}</a>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="hint" style="font-size:10.5px;color:var(--faint);margin-top:12px;line-height:1.6">
+    Raw files are never written to by the pipeline, so every step can be re-run from scratch. Each loader records what it read and what it changed in <span style="font-family:var(--mono)">data/interim/</span>; the full download table, with vintages and the exact indicator codes, is in the repository README.
+  </p>
+</section>
 
 <footer>
   Built by <span style="color:var(--muted)">python -m src.dashboard</span> from outputs/ — every figure read from the committed tables, nothing recomputed in the browser.<br>
@@ -342,17 +392,47 @@ let xKey = "spi_rebuilt";
 let growthScale = "shared";
 
 const SORTS = [
-  {key:"mean_gap",     label:"Mean gap",    desc:"signed",     fmt:v=>fmt(v,3)},
-  {key:"mean_abs_gap", label:"Mean |gap|",  desc:"size",       fmt:v=>v.toFixed(3)},
-  {key:"volatility",   label:"Volatility",  desc:"sd of gap",  fmt:v=>v.toFixed(3)},
-  {key:"worst_gap",    label:"Worst year",  desc:"largest",    fmt:v=>fmt(v,3)}
+  {key:"mean_gap", label:"Mean gap", fmt:v=>fmt(v,3),
+   one:"Average of (Δln GDP − Δln lights) across the six years. Negative = lights grew faster than reported GDP.",
+   help:"MEAN GAP  —  signed\n\nThe six yearly gaps, averaged.\n\nNegative means night lights grew faster than\nreported GDP: the direction under-reporting\nwould produce.\n\nPositive and negative years CANCEL here, so a\ncountry that swings hard both ways can look\ncalm. Use Mean |gap| to catch those."},
+
+  {key:"mean_abs_gap", label:"Mean |gap|", fmt:v=>v.toFixed(3),
+   one:"Average SIZE of the yearly gap, ignoring direction. Never cancels, so it catches countries that swing both ways.",
+   help:"MEAN |GAP|  —  size only\n\nThe same six gaps, but each made positive\nbefore averaging. Nothing cancels.\n\nThis asks \"how far apart are the two series?\"\nrather than \"which one is ahead?\".\n\nIt is the measure statistical capacity should\nmove: a weak statistical system produces noisy\nGDP in BOTH directions.\n\nA country at +0.3 then −0.3 scores 0.30 here\nand 0.00 on mean gap. Same data, opposite\nimpression — which is why both are offered."},
+
+  {key:"volatility", label:"Volatility", fmt:v=>v.toFixed(3),
+   one:"Standard deviation of the gap within the country: how much it jumps from year to year.",
+   help:"VOLATILITY  —  sd of the gap\n\nHow much the gap moves year to year within\nthe country.\n\nLow means steady — which could be steady near\nzero, or steadily far apart. It says nothing\nabout the level.\n\nHigh means the relationship between GDP and\nlights is unstable, which usually points at a\ndata problem in one of the two series rather\nthan at the economy."},
+
+  {key:"worst_gap", label:"Worst year", fmt:v=>fmt(v,3),
+   one:"The single largest gap in either direction, and the year it happened.",
+   help:"WORST YEAR  —  the single largest gap\n\nThe biggest divergence the country records in\nany one year, signed, with that year shown in\nthe tooltip.\n\nAverages hide one bad year. This is where a\ncase study would start looking, and where to\ncheck for a rebasing, a flare, or a one-off\nstatistical revision."}
 ];
+
 const XAXES = [
-  {key:"spi_rebuilt",     label:"Capacity (SPI rebuilt)"},
-  {key:"accountability",  label:"Accountability (V-Dem)"},
-  {key:"elec_change_total", label:"Electrification, pp gained"},
-  {key:"agri_share",      label:"Agriculture, % of GDP"}
+  {key:"spi_rebuilt", label:"Capacity (SPI rebuilt)",
+   help:"STATISTICAL CAPACITY  —  SPI, 0–100\n\nWorld Bank Statistical Performance Indicators,\naveraged over the six years.\n\nRebuilt here WITHOUT the two indicators that\ndescribe the GDP series itself (system of\nnational accounts, and national accounts base\nyear) — those would make the measure partly\ncircular with the thing being explained.\n\nHigher = stronger statistical system."},
+
+  {key:"accountability", label:"Accountability (V-Dem)",
+   help:"POLITICAL ACCOUNTABILITY  —  V-Dem\n\nv2x_accountability: constraints on government\nthrough elections, civil society, the media and\nother branches of the state.\n\nHigher = more accountable.\n\nIt barely moves within a country over six years\n(about 4.6× more variation between countries\nthan within), so the fixed-effects models have\nvery little to work with."},
+
+  {key:"elec_change_total", label:"Electrification, pp gained",
+   help:"ELECTRIFICATION  —  percentage points gained\n\nChange in the share of the population with\nelectricity access across the window.\n\nIt belongs here because new connections add\nlight without adding much GDP, which pushes the\ngap negative for reasons that have nothing to\ndo with how GDP is reported.\n\nKenya gained about 23 points — the largest in\nthe region."},
+
+  {key:"agri_share", label:"Agriculture, % of GDP",
+   help:"AGRICULTURE  —  % of GDP\n\nAverage share of GDP from agriculture.\n\nIt belongs here because farming adds GDP but\nalmost no night light. A heavily agricultural\neconomy should show a POSITIVE gap for a purely\nmechanical reason, not a statistical one."}
 ];
+
+const TILE_HELP = {
+  "Mean gap":"Average of (Δln GDP − Δln lights) over the six years.\nNegative = lights grew faster than reported GDP.",
+  "Mean |gap|":"Average size of the yearly gap, ignoring direction.\nNothing cancels, so swings both ways still count.",
+  "Volatility":"Standard deviation of the gap within this country:\nhow much it jumps from year to year.",
+  "Δln GDP avg":"Average log change in real GDP per year.\nAbout 0.05 means roughly 5% annual growth.",
+  "Δln lights avg":"Average log change in summed night-lights radiance\nper year, inside the country's borders.",
+  "SPI rebuilt":"Statistical capacity, 0–100, with the two\nGDP-describing indicators removed.",
+  "Accountability":"V-Dem v2x_accountability, averaged over the window.\nHigher = more constraints on government.",
+  "Electrification":"Share of population with electricity access,\nfirst year → last year of the window."
+};
 
 const byIso = Object.fromEntries(DATA.countries.map(c=>[c.iso3c,c]));
 
@@ -365,9 +445,14 @@ function drawSorts(){
     b.className = "tab"; b.setAttribute("role","tab");
     b.setAttribute("aria-selected", s.key === sortKey);
     b.textContent = s.label;
+    hoverable(b, s.help);           // the full explanation, on hover
     b.onclick = ()=>{ sortKey = s.key; drawSorts(); drawRank(); };
     host.appendChild(b);
   });
+  // And the one-line version always on screen, so the page can be read
+  // without hovering over anything.
+  document.getElementById("sort-desc").textContent =
+    SORTS.find(s=>s.key===sortKey).one;
 }
 
 function drawRank(){
@@ -446,7 +531,9 @@ function drawDetail(){
     const d = document.createElement("div"); d.className="tile";
     const b = document.createElement("b"); b.textContent = val; if(col) b.style.color = col;
     const s = document.createElement("span"); s.textContent = lab;
-    d.append(b,s); host.appendChild(d);
+    d.append(b,s);
+    if(TILE_HELP[lab]) hoverable(d, lab.toUpperCase() + "\n\n" + TILE_HELP[lab]);
+    host.appendChild(d);
   });
 
   drawGrowth(c);
@@ -575,9 +662,12 @@ function drawXaxes(){
     b.className="tab"; b.setAttribute("role","tab");
     b.setAttribute("aria-selected", a.key===xKey);
     b.textContent = a.label;
+    hoverable(b, a.help);
     b.onclick = ()=>{ xKey = a.key; drawXaxes(); drawScatter(); };
     host.appendChild(b);
   });
+  document.getElementById("xaxis-desc").textContent =
+    XAXES.find(a=>a.key===xKey).help.split("\n\n")[1];
 }
 
 function drawScatter(){
@@ -637,9 +727,9 @@ function drawGrowthScaleTabs(){
     b.className="tab"; b.setAttribute("role","tab");
     b.setAttribute("aria-selected", key===growthScale);
     b.textContent = label;
-    b.title = key==="shared"
-      ? "Same y-axis for every country, so countries are comparable"
-      : "Axis fitted to this country: easier to read, NOT comparable across countries";
+    hoverable(b, key==="shared"
+      ? "SHARED AXIS\n\nEvery country is drawn on the same y-axis, set by\nthe largest swing anywhere in the panel.\n\nTwo countries can then be compared by eye — but\na calm country looks almost flat, because one\noutlier sets the scale for all 38."
+      : "FIT TO THIS COUNTRY\n\nThe y-axis is fitted to this country's own range,\nso its year-to-year movement is readable.\n\nThe trade-off: countries are NO LONGER\ncomparable by eye. Two charts that look alike\nmay be on completely different scales. Check the\naxis numbers before comparing.");
     b.onclick = ()=>{ growthScale = key; drawGrowthScaleTabs(); drawGrowth(byIso[selected]); };
     host.appendChild(b);
   });

@@ -234,6 +234,137 @@ def build_year_summary(panel: pd.DataFrame) -> list[dict]:
     return summary
 
 
+def describe_file(path: Path) -> dict:
+    """Report whether a raw file is actually here, and how big it is.
+
+    Read off the filesystem rather than copied from the README, because the
+    README's download table went stale once the files arrived and a sources
+    list that says "not yet downloaded" about a file sitting on disk is worse
+    than no sources list.
+    """
+    if path.exists():
+        size = path.stat().st_size
+        unit = "MB" if size >= 1_000_000 else "KB"
+        shown = size / (1_000_000 if unit == "MB" else 1_000)
+        return {"present": True, "size": f"{shown:.1f} {unit}"}
+    return {"present": False, "size": "—"}
+
+
+def build_sources() -> list[dict]:
+    """Where every number in this dashboard comes from."""
+    wdi_vintage = "—"
+    vintage_path = config.DATA_INTERIM / "wdi_vintage.csv"
+    if vintage_path.exists():
+        vintage = pd.read_csv(vintage_path)
+        dates = sorted(set(vintage["last_updated"].astype(str)))
+        wdi_vintage = ", ".join(dates)
+
+    wdi_files = sorted(config.DATA_RAW.glob("API_*.csv"))
+    wdi_present = {"present": bool(wdi_files),
+                   "size": f"{len(wdi_files)} files"}
+
+    rasters = sorted(config.LIGHTS_RASTER_DIR.glob(
+        config.LIGHTS_RASTER_PATTERN.replace("{year}", "*")))
+    raster_bytes = sum(r.stat().st_size for r in rasters) if rasters else 0
+
+    return [
+        {
+            "name": "World Bank WDI",
+            "provides": "GDP (constant LCU and growth), agriculture share, "
+                        "electricity access, urban share, population, "
+                        "oil rents",
+            "detail": "NY.GDP.MKTP.KN · NY.GDP.MKTP.KD.ZG · NV.AGR.TOTL.ZS · "
+                      "EG.ELC.ACCS.ZS · SP.URB.TOTL.IN.ZS · SP.POP.TOTL · "
+                      "NY.GDP.PETR.RT.ZS",
+            "vintage": f"last updated {wdi_vintage}",
+            "url": "https://databank.worldbank.org/source/"
+                   "world-development-indicators",
+            "note": "GDP levels are in each country's own currency at its own "
+                    "base year, so they are never compared across countries — "
+                    "only differenced within one.",
+            **wdi_present,
+        },
+        {
+            "name": "EOG VIIRS Nighttime Lights",
+            "provides": "The night-lights side of every gap on this page",
+            "detail": f"VNL {config.VIIRS_VERSION} annual composites "
+                      f"{min(config.YEARS_LEVELS)}–{max(config.YEARS_LEVELS)}, "
+                      "average_masked band, 15 arc-second",
+            "vintage": f"{len(rasters)} annual rasters",
+            "url": "https://eogdata.mines.edu/products/vnl/",
+            "note": "Summed inside national borders with area-weighted zonal "
+                    "statistics. The 2017 composite changed detection "
+                    "sensitivity, which inflates growth for dim countries — "
+                    "hence the bright-cells series shown alongside.",
+            "present": bool(rasters),
+            "size": (f"{raster_bytes / 1_000_000:.0f} MB"
+                     if raster_bytes else "—"),
+        },
+        {
+            "name": "Natural Earth",
+            "provides": "Country boundaries used to sum radiance per country",
+            "detail": "1:10m Admin 0 Countries, version 5.1.1, "
+                      f"ISO3 from the {config.BOUNDARY_ISO3_COLUMN} column",
+            "vintage": "public domain",
+            "url": "https://www.naturalearthdata.com/",
+            "note": "Checked both ways against the 48-country list: no "
+                    "country missing, no extra polygon, no duplicates.",
+            **describe_file(config.BOUNDARY_FILE),
+        },
+        {
+            "name": "World Bank SPI",
+            "provides": "Statistical capacity — the published index, its five "
+                        "pillars, and the rebuilt version used here",
+            "detail": "SPI_index.csv (published scores) and SPI_data.csv "
+                      "(indicator level, 2004–2024)",
+            "vintage": "2016–2024",
+            "url": "https://github.com/worldbank/SPI",
+            "note": "Pillar 5 is Dimension 5.2 alone, and two of its ten "
+                    "indicators describe the GDP series itself. Those two are "
+                    "removed in the rebuilt score, after reproducing the "
+                    "published index exactly.",
+            **describe_file(config.SPI_INDEX_FILE),
+        },
+        {
+            "name": "V-Dem",
+            "provides": "Political accountability, and its vertical, "
+                        "horizontal and diagonal components",
+            "detail": "Country-Year Full+Others v16, v2x_accountability",
+            "vintage": "published 2026, covers 1789–2025",
+            "url": "https://v-dem.net/data/the-v-dem-dataset/",
+            "note": "Varies about 4.6× more between countries than within "
+                    "them, so fixed effects identify it weakly.",
+            **describe_file(config.VDEM_FILE),
+        },
+        {
+            "name": "OxCGRT",
+            "provides": "COVID-19 policy stringency, 2020–2021",
+            "detail": "OxCGRT_nat_latest.csv, "
+                      f"{config.OXCGRT_STRINGENCY_COLUMN}, daily → annual mean",
+            "vintage": "daily 2020-01-01 to 2023-02-28",
+            "url": "https://github.com/OxCGRT/covid-policy-tracker",
+            "note": "Set to 0 for 2016–2019: there was no pandemic policy to "
+                    "measure, so zero is the true value, not a gap. Missing "
+                    "for Guinea-Bissau and São Tomé, which is why the panel "
+                    "is 38 countries and not 40.",
+            **describe_file(config.OXCGRT_FILE),
+        },
+        {
+            "name": "National statistics offices",
+            "provides": "GDP rebasing dates",
+            "detail": "SPI raw column RAW.D5.2.2.NABY, plus official release "
+                      "dates where they differ",
+            "vintage": "—",
+            "url": "https://www.knbs.or.ke/press-release-on-launch-of-the-"
+                   "revised-national-accounts-estimates/",
+            "note": "Kenya's 2016 base year appears in SPI only from 2022, but "
+                    "KNBS released it in September 2021, so the official date "
+                    "is used instead.",
+            "present": True, "size": "—",
+        },
+    ]
+
+
 def build_payload(data: dict) -> dict:
     """Assemble everything the page needs into one JSON-serialisable dict."""
     panel = data["panel"]
@@ -256,6 +387,7 @@ def build_payload(data: dict) -> dict:
         "countries": countries,
         "years": build_year_summary(panel),
         "results": read_headline_numbers(),
+        "sources": build_sources(),
     }
 
     # The scales the charts share, computed here so every chart of the same
@@ -333,6 +465,12 @@ def check_payload(payload: dict) -> None:
     print(f"  PASS  headline results read from the tables "
           f"(beta = {results['beta']['estimate']:.3f})")
 
+    # A sources list that claims a file is present when it is not would be
+    # worse than none, so the presence flags are reported rather than assumed.
+    missing = [s["name"] for s in payload["sources"] if not s["present"]]
+    print(f"  INFO  {len(payload['sources'])} sources listed; "
+          f"{'all raw files present' if not missing else 'MISSING: ' + ', '.join(missing)}")
+
 
 def render(payload: dict, out_path: Path) -> None:
     """Fill the template with the payload and write the single HTML file."""
@@ -356,6 +494,7 @@ def render(payload: dict, out_path: Path) -> None:
         payload_json=payload_json,
         meta=payload["meta"],
         results=payload["results"],
+        sources=payload["sources"],
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
