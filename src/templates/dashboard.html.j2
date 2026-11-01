@@ -472,7 +472,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
 </div>
 {% endif %}
 
-<section class="card" style="margin-top:16px">
+<section class="card" id="sec-compare" style="margin-top:16px">
   <h2>Compare countries</h2>
   <p class="sub">Pick up to eight. Every series is on one shared axis, so these lines are directly comparable — unlike the single-country trace above, which can be fitted to itself.</p>
   <div class="cmp-bar">
@@ -487,7 +487,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   <table class="cmp-table" id="cmp-table"></table>
 </section>
 
-<section class="card" style="margin-top:16px">
+<section class="card" id="sec-methods" style="margin-top:16px">
   <h2>The models, and what every symbol means</h2>
   <p class="sub">Three equations. The first defines what is plotted; the second is what is estimated; the third tests whether the first one was a fair thing to plot.</p>
 
@@ -530,7 +530,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   </p>
 </section>
 
-<section class="card" style="margin-top:16px">
+<section class="card" id="sec-datasets" style="margin-top:16px">
   <h2>Processed datasets</h2>
   <p class="sub">What this project built from the raw sources. Each is produced by one module, re-runs byte-identically, and{% if datasets[0].csv %} is embedded in this page — the download buttons need no server and no internet{% else %} lives in the repository{% endif %}.</p>
   <div class="dsets">
@@ -549,7 +549,7 @@ footer{margin-top:22px; font-size:10.5px; color:var(--faint); font-family:var(--
   </div>
 </section>
 
-<section class="card" style="margin-top:16px">
+<section class="card" id="sec-sources" style="margin-top:16px">
   <h2>Sources</h2>
   <p class="sub">Every number on this page traces to one of these. "On disk" is read from the filesystem when the dashboard is built, not copied from documentation — so it cannot claim a file is present when it is not.</p>
   <div class="srcs">
