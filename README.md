@@ -37,7 +37,8 @@ and `PanelOLS` verified to recover a known slope exactly.
 | 4 | `src/load_oxcgrt.py` | done, run on the real data |
 | 5 | `src/process_lights.py` | done, all 7 years processed |
 | 5a | `src/verify_sources.py` | done, all checks pass |
-| 6 | `src/build_panel.py` | documented stub |
+| 6 | `src/build_panel.py` | done, 38 countries / 228 rows |
+| 6a | `src/verify_panel.py` | done, all checks pass |
 | 7 | `src/models.py` | documented stub |
 
 Each of the seven interim tables re-runs **byte-identically** from the raw
@@ -157,12 +158,19 @@ python -m src.process_lights
 python -m src.verify_sources
 
 python -m src.build_panel
+
+# 6. gate: audit the built panel value by value against its sources
+python -m src.verify_panel
+
 python -m src.models
 ```
 
 `verify_sources` exits non-zero if anything would make the merge silently
 wrong, so it can be run as a gate. It is the step that caught the SPI 2015
-trap described below.
+trap described below. `verify_panel` is the matching gate on the other side of
+the merge: it re-derives every value in the built panel from the interim files
+by key lookup, which is the only way to catch a merge that lines up the right
+number of rows against the wrong keys.
 
 Run every command from the project root, using `python -m src.<module>` rather
 than `python src/<module>.py`. The `-m` form runs `src` as a package, which is
@@ -484,6 +492,87 @@ rather than defaulted:
 Assumptions still to verify against the actual data are marked
 `ASSUMPTION TO VERIFY` in `src/config.py`.
 
+## The estimation panel
+
+`data/processed/ssa_panel.csv` — **38 countries × 6 years = 228 rows**, 43
+columns, 2016–2021, balanced. Every dropped country is listed with its reason
+and the variables responsible in `outputs/tables/dropped_countries.csv`.
+
+The arithmetic the build asserts against `config.expected_sample()`:
+
+```
+48 countries × 6 years                        = 288 possible rows
+less 8 missing WDI or SPI data   → 40 countries, 240 rows
+less 2 missing COVID stringency  → 38 countries, 228 rows
+less 0 lost to night lights      → 38 countries, 228 rows
+```
+
+### What the panel looks like before any model is fitted
+
+| | mean | sd | min | median | max |
+| --- | --- | --- | --- | --- | --- |
+| Δln GDP | 0.027 | 0.043 | −0.233 | 0.037 | 0.113 |
+| Δln lights | 0.083 | 0.122 | −0.281 | 0.072 | 0.667 |
+| **gap** (Δln GDP − Δln lights) | **−0.057** | 0.121 | −0.615 | −0.048 | 0.264 |
+| abs_gap | 0.099 | 0.089 | 0.000 | 0.081 | 0.615 |
+
+**The gap is negative in 157 of 228 country-years (69%)**: lights grew faster
+than reported GDP across most of the region, most of the time. That is a
+description of the data, not a result — how much of it is under-reported
+growth, how much is electrification, and how much is the 2017 detection drift
+documented above is exactly what the models are for.
+
+### Within- versus between-country variation
+
+This decides what fixed effects can actually identify, so it is worth reading
+before the first regression rather than after a disappointing one:
+
+| Variable | within | between | between / within |
+| --- | --- | --- | --- |
+| gap | 0.109 | 0.051 | 0.47× |
+| Δln GDP | 0.035 | 0.026 | 0.74× |
+| Δln lights | 0.108 | 0.057 | 0.53× |
+| elec_access_change | 2.815 | 1.293 | 0.46× |
+| spi_rebuilt | 4.83 | 8.90 | 1.84× |
+| **v2x_accountability** | **0.131** | **0.597** | **4.56×** |
+
+The outcome and the growth variables vary mostly *within* countries, which is
+what fixed effects need. **Accountability does not**: it is 4.6 times more
+variable across countries than within them, so its coefficient is identified
+off very little and will be imprecise. The brief anticipated this; the panel
+confirms it, and it belongs in the limitations rather than as a surprise in
+the results.
+
+### How the merge is protected
+
+Two failures would survive every row count, so both are checked directly:
+
+- **Wrong keys, right counts.** `verify_panel.py` looks every carried-across
+  value up in its source file by `(iso3c, year)` and compares — all 228 rows,
+  not a sample. A merge that aligned the right number of rows against the
+  wrong keys would pass a count check and fail this one.
+- **A lag crossing a country boundary.** Shifting a sorted frame without
+  grouping gives each country's first year the *previous country's* last year:
+  a plausible wrong number, not a missing one. Every lag is recomputed by
+  explicit key lookup, and the gate prints the boundary case — Burundi's 2016
+  growth reads **+0.032**, where a frame-wide shift would have given it
+  **−2.087** from Angola's 2021.
+
+### One bug this step found, upstream
+
+`rebuild_spi.py` computed the rebuilt SPI score with pandas' default
+`skipna=True`, so a country-year missing a pillar still received a score — the
+mean of whichever pillars happened to be present. The rebuilt index therefore
+existed for **CAF, COD and SYC**, which the SPI team does not score at all,
+and for 2015, where no published index exists.
+
+Left alone, the balanced panel would have kept 41 countries instead of 38, with
+three of them carried on a capacity measure this project invented. The fix is
+`skipna=False` in both row means, plus a check each run that the rebuilt index
+is available on exactly the same country-years as the published one. It costs
+nothing in reproduction: in this data the published score exists if and only if
+all five pillars do, which is now asserted rather than assumed.
+
 ## Open tasks
 
 Done since the brief was written: VIIRS 2015–2021 processed (no countries lost,
@@ -493,8 +582,8 @@ stringency added, and every count in the brief reconciled.
 
 Still open:
 
-1. Build the panel (`src/build_panel.py`) and estimate the models
-   (`src/models.py`). Nothing has been estimated yet.
+1. Estimate the models (`src/models.py`). The panel is built and audited;
+   nothing has been estimated yet.
 2. Decide the accountability scale (raw, standardised, or V-Dem's `osp` 0–1),
    and whether to centre SPI and accountability.
 3. Add oil rents to the panel (already loaded in `wdi_long.csv`) and get GSS

@@ -49,7 +49,7 @@ WDI_SKIPROWS = 4
 
 VDEM_FILE = DATA_RAW / "V-Dem-CY-Full+Others-v16.csv"
 SPI_INDICATOR_FILE = DATA_RAW / "SPI_data.csv"           # indicator level, 2004-2024
-SPI_INDEX_FILE = DATA_RAW / "SPI_index.csv"              # published scores (NOT YET DOWNLOADED)
+SPI_INDEX_FILE = DATA_RAW / "SPI_index.csv"               # published scores (NOT YET DOWNLOADED)
 SPI_METADATA_FILE = DATA_RAW / "SPI_full_metadata.csv"   # scoring rules (NOT YET DOWNLOADED)
 OXCGRT_FILE = DATA_RAW / "OxCGRT_nat_latest.csv"         # (NOT YET DOWNLOADED)
 
@@ -601,7 +601,11 @@ CONTROLS = ["agri_share", "elec_access_change", "urban_share", "ln_population"]
 # model, so that in the check model the lights elasticity is read at average
 # capacity and accountability.
 CAPACITY_MAIN = "spi_rebuilt"
-CAPACITY_ALTERNATIVES = ["spi_pillar4", "spi_overall"]  # alternative, then original
+# These are COLUMN NAMES in the built panel, not labels: build_panel.py checks
+# every one of them exists and fails if not. Named "spi_pillar4" when this was
+# written; the real column is spi_p4_sources, which is what the SPI loader
+# produces and what the interim files carry.
+CAPACITY_ALTERNATIVES = ["spi_p4_sources", "spi_overall"]  # alternative, then original
 ACCOUNTABILITY_MAIN = "v2x_accountability"
 ACCOUNTABILITY_ALTERNATIVES = ["v2x_diagacc", "v2x_veracc", "v2x_horacc"]
 CENTRE_VARIABLES = [CAPACITY_MAIN, ACCOUNTABILITY_MAIN]

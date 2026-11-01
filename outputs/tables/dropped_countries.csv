@@ -1,0 +1,11 @@
+iso3c,years_missing,n_years_missing,variables,expected_reason
+CAF,"2016, 2017, 2018, 2019, 2020, 2021",6,spi_rebuilt,SPI missing all 6 years
+COD,2016,1,spi_rebuilt,SPI missing 2016 (1 year)
+COM,"2016, 2017, 2018, 2019, 2020, 2021",6,"covid_stringency, spi_rebuilt",SPI missing all 6 years
+ERI,"2016, 2017, 2018, 2019, 2020, 2021",6,"agri_share, covid_stringency, d_ln_gdp, gap, spi_rebuilt","GDP growth, agriculture share and SPI missing, all 6 years"
+GNB,"2020, 2021",2,covid_stringency,No OxCGRT stringency data
+GNQ,"2016, 2017, 2018, 2019, 2020, 2021",6,"covid_stringency, spi_rebuilt",SPI missing 2016-2019 (4 years)
+SOM,"2016, 2017, 2018, 2019, 2020, 2021",6,"agri_share, spi_rebuilt",Agriculture share missing all 6 years (SPI also missing 2016)
+SSD,"2016, 2017, 2018, 2019, 2020, 2021",6,"agri_share, d_ln_gdp, gap","GDP growth and agriculture share missing, all 6 years"
+STP,"2020, 2021",2,covid_stringency,No OxCGRT stringency data
+SYC,2016,1,spi_rebuilt,SPI missing 2016 (1 year)

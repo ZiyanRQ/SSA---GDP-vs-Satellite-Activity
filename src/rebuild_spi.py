@@ -99,7 +99,28 @@ def reproduce_pillar5(data: pd.DataFrame, published: pd.DataFrame,
         on=["iso3c", "year"], how="left", validate="one_to_one",
     )
 
-    merged["p5_reproduced"] = 100 * merged[indicators].mean(axis=1)
+    # skipna=False so that a country-year missing any indicator reproduces as
+    # missing rather than as the mean of whatever is present. See the note in
+    # rebuild_scores: this is what keeps the rebuilt index on the same
+    # country-years as the published one.
+    merged["p5_reproduced"] = 100 * merged[indicators].mean(axis=1,
+                                                            skipna=False)
+
+    # The claim that makes skipna=False safe: the published Pillar 5 exists
+    # exactly when all ten of its indicators do. Checked every run, because if
+    # a future vintage publishes a pillar built on partial indicators, the
+    # rebuild would start dropping country-years the published index keeps.
+    mismatch = int((merged["spi_p5_infra"].notna()
+                    != merged["p5_reproduced"].notna()).sum())
+    print(f"\n  pillar 5 availability vs its indicators: {mismatch} "
+          "country-year(s) where one exists without the other")
+    if mismatch:
+        raise ValueError(
+            "the published pillar 5 is available on a different set of "
+            "country-years than its own ten indicators. Re-read the R code "
+            "before rebuilding: the index may now tolerate missing "
+            "indicators, which changes what the rebuild should do."
+        )
 
     comparable = merged.dropna(subset=["spi_p5_infra", "p5_reproduced"])
     diff = (comparable["spi_p5_infra"] - comparable["p5_reproduced"]).abs()
@@ -158,9 +179,37 @@ def rebuild_scores(merged: pd.DataFrame, indicators: list[str]) -> pd.DataFrame:
         print(f"\n{name}: keeping {len(keep)} of {len(indicators)} "
               f"indicators, dropping {dropped}")
 
-        pillar5 = 100 * merged[keep].mean(axis=1)
-        merged[f"{name}_p5"] = pillar5
-        merged[name] = merged[pillars_1_4 + [f"{name}_p5"]].mean(axis=1)
+        # skipna=False is load-bearing, not a detail. With the default
+        # skipna=True, a country-year missing a pillar still gets a score -
+        # the mean of whatever pillars happen to be there - so the rebuilt
+        # index would exist for countries the SPI team does not score at all
+        # (CAF, COD, SYC) and for 2015, where there is no published index.
+        # build_panel would then keep those countries on a capacity measure
+        # this project invented. The rebuilt index must exist exactly where
+        # the published one does.
+        #
+        # It costs nothing in reproduction: in this data the published score
+        # exists if and only if all five pillars do, and Pillar 5 exists if
+        # and only if all ten of its indicators do, so skipna=False gives the
+        # identical answer wherever an answer is defined. Checked, not assumed.
+        merged[f"{name}_p5"] = 100 * merged[keep].mean(axis=1, skipna=False)
+        merged[name] = merged[pillars_1_4 + [f"{name}_p5"]].mean(
+            axis=1, skipna=False)
+
+        published_only = int((merged["spi_overall"].notna()
+                              & merged[name].isna()).sum())
+        rebuilt_only = int((merged["spi_overall"].isna()
+                            & merged[name].notna()).sum())
+        print(f"  availability vs the published score: "
+              f"{published_only} published-but-not-rebuilt, "
+              f"{rebuilt_only} rebuilt-but-not-published")
+        if published_only or rebuilt_only:
+            raise ValueError(
+                f"{name} is available on a different set of country-years "
+                "than the published index. The rebuild changes which "
+                "indicators go into the score, never which country-years "
+                "have one."
+            )
 
     return merged
 
